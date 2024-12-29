@@ -1,0 +1,200 @@
+.search-container {
+  @apply max-w-4xl mx-auto p-4 space-y-4;
+}
+
+.search-bar {
+  @apply flex gap-2;
+}
+
+.search-input {
+  @apply flex-1 px-4 py-2 text-lg rounded-lg border border-gray-300
+         focus:ring-2 focus:ring-blue-500 focus:border-transparent
+         transition-all duration-200 shadow-sm;
+}
+
+.filter-toggle {
+  @apply px-4 py-2 bg-gray-100 rounded-lg text-gray-700
+         hover:bg-gray-200 transition-colors duration-200
+         focus:outline-none focus:ring-2 focus:ring-gray-400;
+}
+
+.filters-panel {
+  @apply bg-white rounded-lg shadow-md border border-gray-200 p-4 overflow-hidden;
+}
+
+.filters-grid {
+  @apply grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4;
+}
+
+.filter-group {
+  @apply space-y-2;
+}
+
+.filter-group label {
+  @apply block text-sm font-medium text-gray-700;
+}
+
+.date-range {
+  @apply flex gap-2;
+}
+
+.date-range input {
+  @apply w-full px-3 py-2 rounded-md border border-gray-300
+         focus:ring-2 focus:ring-blue-500 focus:border-transparent;
+}
+
+.sort-select {
+  @apply w-full px-3 py-2 rounded-md border border-gray-300
+         focus:ring-2 focus:ring-blue-500 focus:border-transparent;
+}
+
+.tags-input {
+  @apply space-y-2;
+}
+
+.tags-input input {
+  @apply w-full px-3 py-2 rounded-md border border-gray-300
+         focus:ring-2 focus:ring-blue-500 focus:border-transparent;
+}
+
+.tags {
+  @apply flex flex-wrap gap-2;
+}
+
+.tag {
+  @apply inline-flex items-center px-2 py-1 rounded-full bg-blue-100
+         text-blue-800 text-sm;
+}
+
+.tag button {
+  @apply ml-1 text-blue-600 hover:text-blue-800 focus:outline-none;
+}
+
+.loading-indicator {
+  @apply flex items-center justify-center gap-2 py-8;
+}
+
+.spinner {
+  @apply w-5 h-5 border-2 border-gray-300 border-t-blue-500
+         rounded-full animate-spin;
+}
+
+.results-container {
+  @apply space-y-4;
+}
+
+.result-card {
+  @apply p-4 bg-white rounded-lg shadow-md border border-gray-200
+         hover:shadow-lg transition-shadow duration-200 cursor-pointer;
+}
+
+.result-card h3 {
+  @apply text-xl font-semibold text-gray-900 mb-2;
+}
+
+.authors {
+  @apply text-sm text-gray-600 mb-2;
+}
+
+.abstract {
+  @apply text-gray-700 mb-4 line-clamp-3;
+}
+
+.result-meta {
+  @apply flex flex-wrap gap-4 text-sm text-gray-500;
+}
+
+.source {
+  @apply font-medium text-blue-600;
+}
+
+.citations {
+  @apply text-green-600;
+}
+
+.score {
+  @apply text-purple-600;
+}
+
+.highlights {
+  @apply mt-4 space-y-2 text-sm;
+}
+
+.highlight {
+  @apply bg-yellow-50 p-2 rounded;
+}
+
+.highlight .field {
+  @apply font-medium text-gray-700 mr-2;
+}
+
+.highlight .match {
+  @apply text-gray-900;
+}
+
+.suggestions {
+  @apply absolute z-50 w-full bg-white mt-1 rounded-lg shadow-lg
+         border border-gray-200 max-h-60 overflow-y-auto;
+}
+
+.suggestion-item {
+  @apply px-4 py-2 hover:bg-gray-50 cursor-pointer text-gray-700;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .filters-grid {
+    @apply grid-cols-1;
+  }
+
+  .result-meta {
+    @apply flex-col gap-2;
+  }
+}
+
+/* Dark Mode */
+@media (prefers-color-scheme: dark) {
+  .search-container {
+    @apply bg-gray-900;
+  }
+
+  .search-input {
+    @apply bg-gray-800 border-gray-700 text-white;
+  }
+
+  .filter-toggle {
+    @apply bg-gray-800 text-gray-300 hover:bg-gray-700;
+  }
+
+  .filters-panel {
+    @apply bg-gray-800 border-gray-700;
+  }
+
+  .filter-group label {
+    @apply text-gray-300;
+  }
+
+  .result-card {
+    @apply bg-gray-800 border-gray-700;
+  }
+
+  .result-card h3 {
+    @apply text-white;
+  }
+
+  .abstract {
+    @apply text-gray-300;
+  }
+
+  .highlight {
+    @apply bg-gray-700;
+  }
+
+  .highlight .field {
+    @apply text-gray-300;
+  }
+
+  .highlight .match {
+    @apply text-white;
+  }
+}

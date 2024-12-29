@@ -1,0 +1,61 @@
+2024-11-30 15:09:57,981 - sqlalchemy.engine.Engine - INFO - BEGIN (implicit)
+2024-11-30 15:09:57,981 - sqlalchemy.engine.Engine - INFO - PRAGMA main.table_info("projects")
+2024-11-30 15:09:57,981 - sqlalchemy.engine.Engine - INFO - [raw sql] ()
+2024-11-30 15:09:57,982 - sqlalchemy.engine.Engine - INFO - PRAGMA main.table_info("files")
+2024-11-30 15:09:57,982 - sqlalchemy.engine.Engine - INFO - [raw sql] ()
+2024-11-30 15:09:57,982 - sqlalchemy.engine.Engine - INFO - COMMIT
+2024-11-30 15:12:23,091 - sqlalchemy.engine.Engine - INFO - BEGIN (implicit)
+2024-11-30 15:12:23,091 - sqlalchemy.engine.Engine - INFO - PRAGMA main.table_info("projects")
+2024-11-30 15:12:23,092 - sqlalchemy.engine.Engine - INFO - [raw sql] ()
+2024-11-30 15:12:23,092 - sqlalchemy.engine.Engine - INFO - PRAGMA main.table_info("files")
+2024-11-30 15:12:23,092 - sqlalchemy.engine.Engine - INFO - [raw sql] ()
+2024-11-30 15:12:23,092 - sqlalchemy.engine.Engine - INFO - COMMIT
+2024-11-30 15:18:48,608 - sqlalchemy.engine.Engine - INFO - BEGIN (implicit)
+2024-11-30 15:18:48,608 - sqlalchemy.engine.Engine - INFO - PRAGMA main.table_info("projects")
+2024-11-30 15:18:48,608 - sqlalchemy.engine.Engine - INFO - [raw sql] ()
+2024-11-30 15:18:48,609 - sqlalchemy.engine.Engine - INFO - PRAGMA main.table_info("files")
+2024-11-30 15:18:48,609 - sqlalchemy.engine.Engine - INFO - [raw sql] ()
+2024-11-30 15:18:48,609 - sqlalchemy.engine.Engine - INFO - COMMIT
+2024-11-30 15:23:48,250 - sqlalchemy.engine.Engine - INFO - BEGIN (implicit)
+2024-11-30 15:23:48,250 - sqlalchemy.engine.Engine - INFO - PRAGMA main.table_info("projects")
+2024-11-30 15:23:48,250 - sqlalchemy.engine.Engine - INFO - [raw sql] ()
+2024-11-30 15:23:48,250 - sqlalchemy.engine.Engine - INFO - PRAGMA main.table_info("files")
+2024-11-30 15:23:48,250 - sqlalchemy.engine.Engine - INFO - [raw sql] ()
+2024-11-30 15:23:48,250 - sqlalchemy.engine.Engine - INFO - COMMIT
+2024-11-30 15:26:45,723 - sqlalchemy.engine.Engine - INFO - BEGIN (implicit)
+2024-11-30 15:26:45,723 - sqlalchemy.engine.Engine - INFO - PRAGMA main.table_info("projects")
+2024-11-30 15:26:45,723 - sqlalchemy.engine.Engine - INFO - [raw sql] ()
+2024-11-30 15:26:45,724 - sqlalchemy.engine.Engine - INFO - PRAGMA main.table_info("files")
+2024-11-30 15:26:45,724 - sqlalchemy.engine.Engine - INFO - [raw sql] ()
+2024-11-30 15:26:45,724 - sqlalchemy.engine.Engine - INFO - COMMIT
+2024-11-30 15:29:59,889 - sqlalchemy.engine.Engine - INFO - BEGIN (implicit)
+2024-11-30 15:29:59,889 - sqlalchemy.engine.Engine - INFO - PRAGMA main.table_info("projects")
+2024-11-30 15:29:59,889 - sqlalchemy.engine.Engine - INFO - [raw sql] ()
+2024-11-30 15:29:59,889 - sqlalchemy.engine.Engine - INFO - PRAGMA main.table_info("files")
+2024-11-30 15:29:59,889 - sqlalchemy.engine.Engine - INFO - [raw sql] ()
+2024-11-30 15:29:59,889 - sqlalchemy.engine.Engine - INFO - COMMIT
+2024-11-30 15:35:03,124 - sqlalchemy.engine.Engine - INFO - BEGIN (implicit)
+2024-11-30 15:35:03,124 - sqlalchemy.engine.Engine - INFO - PRAGMA main.table_info("projects")
+2024-11-30 15:35:03,124 - sqlalchemy.engine.Engine - INFO - [raw sql] ()
+2024-11-30 15:35:03,124 - sqlalchemy.engine.Engine - INFO - PRAGMA main.table_info("files")
+2024-11-30 15:35:03,124 - sqlalchemy.engine.Engine - INFO - [raw sql] ()
+2024-11-30 15:35:03,124 - sqlalchemy.engine.Engine - INFO - COMMIT
+2024-11-30 15:43:23,489 - sqlalchemy.engine.Engine - INFO - BEGIN (implicit)
+2024-11-30 15:43:23,489 - sqlalchemy.engine.Engine - INFO - PRAGMA main.table_info("projects")
+2024-11-30 15:43:23,489 - sqlalchemy.engine.Engine - INFO - [raw sql] ()
+2024-11-30 15:43:23,489 - sqlalchemy.engine.Engine - INFO - PRAGMA main.table_info("files")
+2024-11-30 15:43:23,489 - sqlalchemy.engine.Engine - INFO - [raw sql] ()
+2024-11-30 15:43:23,489 - sqlalchemy.engine.Engine - INFO - COMMIT
+2024-11-30 15:56:26,242 - sqlalchemy.engine.Engine - INFO - BEGIN (implicit)
+2024-11-30 15:56:26,242 - sqlalchemy.engine.Engine - INFO - PRAGMA main.table_info("projects")
+2024-11-30 15:56:26,242 - sqlalchemy.engine.Engine - INFO - [raw sql] ()
+2024-11-30 15:56:26,243 - sqlalchemy.engine.Engine - INFO - PRAGMA main.table_info("files")
+2024-11-30 15:56:26,243 - sqlalchemy.engine.Engine - INFO - [raw sql] ()
+2024-11-30 15:56:26,243 - sqlalchemy.engine.Engine - INFO - COMMIT
+2024-12-01 18:33:31,326 - INFO - Upload directory: /home/zack/Downloads/gg/project-bolt-sb1-mjsjnm/project/backend/uploads
+2024-12-01 18:33:31,339 - DEBUG - Using selector: EpollSelector
+2024-12-01 18:43:28,917 - INFO - Upload directory: /home/zack/Downloads/gg/project-bolt-sb1-mjsjnm/project/backend/uploads
+2024-12-01 18:43:28,931 - DEBUG - Using selector: EpollSelector
+2024-12-01 18:47:28,929 - INFO - Upload directory: /home/zack/Downloads/gg/project-bolt-sb1-mjsjnm/project/backend/uploads
+2024-12-01 18:47:28,942 - DEBUG - Using selector: EpollSelector
+2024-12-24 19:14:09,205 - __main__ - INFO - Starting server...

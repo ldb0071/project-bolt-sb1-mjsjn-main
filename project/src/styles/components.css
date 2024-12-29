@@ -1,0 +1,200 @@
+/* Enhanced Search Styles */
+
+.search-container {
+    @apply relative w-full max-w-2xl mx-auto;
+}
+
+.search-input-wrapper {
+    @apply relative flex items-center;
+}
+
+.search-input {
+    @apply w-full px-4 py-3 text-lg rounded-lg border border-gray-300 focus: ring-2 focus: ring-blue-500 focus: border-transparent transition-all duration-200 ease-in-out;
+}
+
+.search-spinner {
+    @apply absolute right-4 top-1/2 -translate-y-1/2;
+}
+
+.spinner {
+    @apply w-5 h-5 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin;
+}
+
+.search-filters {
+    @apply flex gap-4 mt-2 px-2;
+}
+
+.filter-checkbox {
+    @apply flex items-center gap-2 text-sm text-gray-600 cursor-pointer hover: text-gray-900 transition-colors duration-200;
+}
+
+.search-results {
+    @apply absolute w-full mt-2 bg-white rounded-lg shadow-lg border border-gray-200 max-h-96 overflow-y-auto z-50;
+}
+
+.search-result-item {
+    @apply p-4 border-b border-gray-100 cursor-pointer hover: bg-gray-50 transition-colors duration-200;
+}
+
+.search-result-item h3 {
+    @apply text-lg font-semibold text-gray-900 mb-1;
+}
+
+.search-result-item p {
+    @apply text-sm text-gray-600;
+}
+
+.result-score {
+    @apply text-xs text-gray-500 mt-2;
+}
+
+
+/* Enhanced PDF Viewer Styles */
+
+.pdf-container {
+    @apply relative w-full h-full bg-gray-100 overflow-auto;
+    -webkit-overflow-scrolling: touch;
+    -webkit-user-select: text;
+    user-select: text;
+    cursor: default;
+}
+
+.pdf-container.panning {
+    cursor: grab;
+}
+
+.pdf-container.panning:active {
+    cursor: grabbing;
+}
+
+.control-button {
+    @apply w-8 h-8 flex items-center justify-center rounded-full bg-white bg-opacity-20 text-white hover: bg-opacity-30 transition-colors duration-200 focus: outline-none focus: ring-2 focus: ring-white focus: ring-opacity-50;
+}
+
+.pdf-container .react-pdf__Document {
+    @apply min-h-full;
+}
+
+.pdf-container .react-pdf__Page {
+    @apply mx-auto;
+    display: flex;
+    justify-content: center;
+    background: white;
+    border-radius: 4px;
+    margin-bottom: 16px;
+}
+
+.pdf-container .react-pdf__Page__textContent {
+    @apply pointer-events-none select-text;
+}
+
+.pdf-container .react-pdf__Page__annotations.annotationLayer {
+    @apply pointer-events-none;
+}
+
+.react-pdf__Page canvas {
+    max-width: 100%;
+    height: auto !important;
+}
+
+.pdf-viewer-container {
+  @apply relative w-full h-full bg-gray-100;
+  overflow: hidden;
+}
+
+.pdf-page {
+  @apply flex items-center justify-center p-4 bg-white;
+  height: 100%;
+  overflow: hidden;
+}
+
+.pdf-page-content {
+  @apply max-h-full max-w-full;
+  object-fit: contain;
+}
+
+.react-pdf__Page {
+  @apply flex items-center justify-center;
+  height: 100%;
+  width: 100%;
+}
+
+.react-pdf__Page canvas {
+  max-height: 100% !important;
+  max-width: 100%;
+  object-fit: contain;
+}
+
+
+/* PDF Preview Loading Animation */
+
+.pdf-loading-overlay {
+    @apply absolute inset-0 bg-gray-100 dark: bg-navy-900 flex items-center justify-center transition-opacity duration-300;
+}
+
+.pdf-error {
+    @apply flex items-center space-x-2 text-red-500 bg-red-100 dark: bg-red-900/20 px-4 py-2 rounded-lg;
+}
+
+
+/* Optimize iframe performance */
+
+.pdf-iframe {
+    @apply w-full h-full border-0;
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    -webkit-font-smoothing: antialiased;
+}
+
+
+/* Animations */
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateX(-100%);
+    }
+    to {
+        transform: translateX(0);
+    }
+}
+
+.animate-fade-in {
+    animation: fadeIn 0.3s ease-out;
+}
+
+.animate-slide-in {
+    animation: slideIn 0.3s ease-out;
+}
+
+
+/* Touch Gestures */
+
+.gesture-area {
+    @apply touch-none select-none;
+}
+
+
+/* Responsive Design */
+
+@media (max-width: 640px) {
+    .search-container {
+        @apply max-w-full px-4;
+    }
+    .search-filters {
+        @apply flex-wrap;
+    }
+    .control-button {
+        @apply w-10 h-10;
+    }
+}
