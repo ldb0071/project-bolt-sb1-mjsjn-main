@@ -1,37 +1,40 @@
 // ...existing code...
 
 /* PDF Preview Styles */
+
 .pdf-preview {
-  -webkit-user-select: text !important;
-  user-select: text !important;
+    -webkit-user-select: text !important;
+    user-select: text !important;
 }
 
 .pdf-preview .react-pdf__Page {
-  position: relative;
-  overflow: hidden;
+    position: relative;
+    overflow: hidden;
 }
 
 .pdf-preview .react-pdf__Page__textContent {
-  pointer-events: auto !important;
-  opacity: 0.3;
-  user-select: text !important;
-  cursor: text !important;
-  transform-origin: 0 0;
-  z-index: 2;
+    pointer-events: auto !important;
+    opacity: 0.3;
+    user-select: text !important;
+    cursor: text !important;
+    transform-origin: 0 0;
+    z-index: 2;
 }
 
 .pdf-preview .react-pdf__Page__annotations {
-  pointer-events: none;
+    pointer-events: none;
 }
 
 .pdf-preview .react-pdf__Page__canvas {
-  position: relative;
-  z-index: 1;
+    position: relative;
+    z-index: 1;
 }
 
+
 /* Prevent text layer flicker during rendering */
+
 .pdf-preview .react-pdf__Page__textContent span {
-  opacity: 1 !important;
+    opacity: 1 !important;
 }
 
 // ...existing code...

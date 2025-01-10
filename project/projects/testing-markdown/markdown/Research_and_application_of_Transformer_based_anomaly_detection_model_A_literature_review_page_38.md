@@ -1,0 +1,11 @@
+Page 38
+
+ϕ ( x ) = h ( x ) √ m ( f 1 ( ω T 1 x ) , ..., f 1 ( ω T m x ) , ..., f l ( ω T 1 x ) , ..., f l ( ω T m x )) (25)
+
+f 1 , ..., f l are different mapping functions, ω 1 , ..., ω m are sampled from the same distribution D . Performer uses the softmax core for fitting
+
+SM ( x, y ) = exp ( || x || 2 2 ) K gauss ( x, y ) exp ( || y || 2 2 ) (26)
+
+To ensure that all weights are positive, the authors used an unbiased approximation. Performer further considers multiple sets of orthogonal W parameters to further reduce the variance and obtain a better acceleration ratio. VQGAN [104] compresses 3D information into discrete potential representations, then finds the nearest neighbor in codebooks composed of K N-dimensional vectors by L 2 norm, and replaces the representation with the nearest neighbor's codebook index K to quantify the representation. The decoder reconstructs the input from the quantized latent space, and attempts to distinguish the real image from the reconstructed image using a discriminator D . Performer learns the probability density of these representations, flattens out the discrete representations of 3 D into 1 D sequences, then estimates the image likelihood in terms of conditional probability, and generates a spatial likelihood graph (1 D → 3 D ) by reshaping each image and up-sampling it. Here Performer can address the quadratic memory dependence of Transformer's attention mechanism on sequence length and the difficulty of training on large-scale sequences. By using a linearized approximation of the attention matrix, Performer can allow training on longer sequences. Experimental results show that Performer can be used simultaneously with the segmentation network with uncertainty. Performer can filter high OOD images, and the segmentation network can provide meaningful uncertainty estimates for images with only slight OOD.
+
+Pinaya et al. [5] used an autoregressive Performer and VQ-VAE for brain anomaly detection and segmentation. Instead of directly applying Performer to learn the distribution over individual pixels, they compressed the input data into spatially small

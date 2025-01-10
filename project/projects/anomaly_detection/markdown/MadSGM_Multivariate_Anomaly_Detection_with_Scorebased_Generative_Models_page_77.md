@@ -1,0 +1,1 @@
+3.4.1 Reconstruction-based Measurement. Wegenerate ˆ x 𝑡 -𝜔 : 𝑡 with trained SGMs and extract the expected value ˆ x 𝑡 at time 𝑡 from the normal temporal trend. We de/fine the following reconstructionbased anomaly measurement as the di/fference between the observed value x 𝑡 and the reconstructed value ˆ x 𝑡 :

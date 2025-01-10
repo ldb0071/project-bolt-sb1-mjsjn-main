@@ -1,0 +1,1 @@
+Parameter : 𝜏 = A real parameter in [ 0 , 1 ] to assign how much noise will be added to condition during puri/fication.

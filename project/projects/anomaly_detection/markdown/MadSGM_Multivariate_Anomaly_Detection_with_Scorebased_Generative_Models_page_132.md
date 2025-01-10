@@ -1,0 +1,1 @@
+Figure 4: The curve of F1 PA%K for SWaT, PSM, and SMD datasets by varying K from 0 to 1. AUC denotes the area under the curve. The higher the AUC value, the better the detection performance.

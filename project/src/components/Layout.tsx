@@ -11,7 +11,8 @@ import {
   ChevronRight,
   Menu,
   LineChart,
-  FileSearch
+  FileSearch,
+  Database
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -35,6 +36,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
       label: 'Projects', 
       path: '/projects',
       isActive: location.pathname === '/projects' || location.pathname.startsWith('/projects/'),
+    },
+    { 
+      icon: Database, 
+      label: 'RAG Chat', 
+      path: '/rag-chat',
+      isActive: location.pathname === '/rag-chat',
     },
     { 
       icon: LineChart, 

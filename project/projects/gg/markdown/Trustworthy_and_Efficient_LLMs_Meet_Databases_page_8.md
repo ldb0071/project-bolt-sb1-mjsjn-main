@@ -1,0 +1,17 @@
+Page 8
+
+The challenges in retrieval include the followings. 1) Heterogeneity: LLMs are text-based, but knowledge can be of any type. Even for text retrieval, heterogeneous lengths and intents between queries and documents can lead to suboptimal retrieval accuracy [74, 89], and the vector-similarity search may be too simple to retrieve necessary information [87, 210]. 2) Scalability: Not only that LLMs have limited context or data they can utilize per inference, but maintaining a large set of retrieval entities and retrieving a subset may incur overheads [269, 303]. While approximation can mitigate the search overhead and make the search negligible to LLM inference costs, it is limited to vector-similarity search, and generalization to more complex searches [131, 135, 137, 239] remains challenging. 3) Sparsity: This is also relevant to data sparsity and noise [56], where relevant data is sparse compared to large information pools. 4) Reliability: Retrieved knowledge may be imperfect [277].
+
+Target. The audience will understand how LLMs can interact with the world and exploit external knowledge to overcome the limits in using LLMs alone.
+
+2.1.4 Making LLMs Self-drive: Adding Brain. Now we have more powerful models and interactions with the world. The last part is how we can make LLMs smart enough to maximize these capacities, adding autonomy. Self-consistency and major voting enables a simple yet e/ffective solution for increasing consistency [283], however, it fails to generate accurate and diverse answers [33, 44, 46] and is yet passive. More active approaches include self-re/flection and adaptive retrieval [11, 32, 123, 125, 159, 185, 331], which adaptively retrieves information multiple times based on the generated output, model con/fidence, query complexity, or /fine-tuned policies. This is particularly helpful for chain-of-thought/multi-hop reasoning and question answering [175, 278, 282, 284, 329].
+
+Thenext step is to use multiple reasoning paths instead of a single path. This multi-path reasoning has been an e/ffective approach for driving LLMs [224, 226, 324, 332]. While the exact mechanism remains closed, OpenAI's o1 model is assumed to plan subtasks, conduct these, and revise the results to decide whether to extend the current plan or generate di/fferent plans, forming a tree-like reasoning structure. They suggest a new scaling law that LLM accuracy increases with inference time, not only with training time and data [205].
+
+Agentic LLM indicates that LLMs can act as agents, selecting actions based on observations [49, 179, 256, 313]. Multiple agents exploit collaborative reasoning, parallel processing, diversity, and specialization akin to humans [35, 104, 172, 212, 214, 227, 299]. Semantic variables [173] regard LLM input and output tokens as dependent variables to explicitly model control /flows.
+
+A broader view includes compound AI [323] where AI and nonAI components interact with each other, including retrievals, control /flows, agentic LLMs, and more. An interesting example is automated research process [187, 259].
+
+Target. The audience will learn about approaches to make LLMs self-driving and build systems around LLMs for complex tasks.
+
+## 2.2 E/fficient LLMs

@@ -1,0 +1,1 @@
+Let us de/fine 𝑆 𝑚 = : { 𝑡 𝑚 𝑠 , . . . , 𝑡 𝑚 𝑒 } as an anomaly segment for 𝑚 = 1 , . . . , 𝑀 and 𝑡 𝑚 𝑠 and 𝑡 𝑚 𝑒 are the start and end times of 𝑆 𝑚 , respectively. The PA%K protocol is de/fined as follows:

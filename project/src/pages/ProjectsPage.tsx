@@ -1,11 +1,12 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Folder, Search, Trash2, Download, Calendar } from 'lucide-react';
+import { Plus, Folder, Search, Trash2, Download, Calendar, FileText } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useStore } from '../store/useStore';
 import { ArxivSearchModal } from '../components/ArxivSearchModal';
 import { toast } from 'react-hot-toast';
 import { ChatButton } from '../components/ChatButton';
+import { convertAllProjectPDFs } from '../services/apiClient';
 
 export function ProjectsPage() {
   const navigate = useNavigate();
@@ -40,6 +41,18 @@ export function ProjectsPage() {
     setCurrentProject(projectId);
     navigate(`/projects/${projectId}`);
   }, [navigate, setCurrentProject]);
+
+  const handleConvertAllPDFs = async (projectId: string, projectName: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const loadingToast = toast.loading('Converting all PDFs to Markdown...');
+      const result = await convertAllProjectPDFs(projectName);
+      toast.dismiss(loadingToast);
+      toast.success(`${result.converted} out of ${result.total} PDFs converted successfully`);
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to convert PDFs');
+    }
+  };
 
   return (
     <div className="min-h-screen bg-navy-900">
@@ -157,7 +170,15 @@ export function ProjectsPage() {
                     Created {new Date(project.createdAt).toLocaleDateString()}
                   </div>
                 </div>
-                <div className="border-t border-navy-700 px-6 py-3 bg-navy-800/50 flex justify-end rounded-b-xl">
+                <div className="border-t border-navy-700 px-6 py-3 bg-navy-800/50 flex justify-between rounded-b-xl">
+                  <button
+                    onClick={(e) => handleConvertAllPDFs(project.id, project.name, e)}
+                    className="text-gray-400 hover:text-primary-400 p-2 rounded-full hover:bg-navy-700 transition-colors flex items-center gap-2"
+                    title="Convert all PDFs to Markdown"
+                  >
+                    <FileText size={18} />
+                    <span className="text-sm">Convert All</span>
+                  </button>
                   <button
                     onClick={(e) => {
                       e.stopPropagation();

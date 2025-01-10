@@ -1,6 +1,22 @@
+/**
+ * Search Service Module
+ * 
+ * This module provides search functionality across the application, including:
+ * - Fuzzy text search using Fuse.js
+ * - Search filters and sorting
+ * - Result caching
+ * - Search history tracking
+ * - Analytics
+ * 
+ * @module searchService
+ */
+
 import Fuse from 'fuse.js';
 import { apiClient } from './apiClient';
 
+/**
+ * Interface for search filter options
+ */
 export interface SearchFilters {
   dateRange?: {
     start: Date;
@@ -17,6 +33,9 @@ export interface SearchFilters {
   language?: string[];
 }
 
+/**
+ * Interface for search result items
+ */
 export interface SearchResult {
   id: string;
   title: string;
@@ -33,6 +52,9 @@ export interface SearchResult {
   }[];
 }
 
+/**
+ * Search service class providing search functionality
+ */
 class SearchService {
   private fuseInstance: Fuse<SearchResult> | null = null;
   private recentSearches: string[] = [];
@@ -43,6 +65,9 @@ class SearchService {
     this.loadRecentSearches();
   }
 
+  /**
+   * Load recent searches from local storage
+   */
   private loadRecentSearches() {
     const saved = localStorage.getItem('recentSearches');
     if (saved) {

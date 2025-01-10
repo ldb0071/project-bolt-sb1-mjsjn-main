@@ -1,0 +1,1 @@
+where ˆ 𝑦 𝑡 is a predicted label and 𝛿 is a certain threshold, 𝐴 (·) is the anomaly measurement of input, | · | is the cardinality of a set, and 𝐾 ∈ [ 0 , 1 ] is a ratio. We denote F1 PA%K as F1-score with the PA%K strategy.

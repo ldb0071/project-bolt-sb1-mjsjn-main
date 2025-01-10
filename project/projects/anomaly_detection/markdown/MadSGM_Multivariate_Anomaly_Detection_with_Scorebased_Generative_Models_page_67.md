@@ -1,0 +1,1 @@
+In addition, because the score function in 𝐿 2 ( 𝑡 ) takes zero vectors as the condition, it can be regarded as a naïve score matching which doesn't require any condition values. Thus, we can think

@@ -1,0 +1,1 @@
+- · Secure Water Treatment (SWaT) [18]: The SWaT dataset was recorded over 11 days from a water treatment testbed, which has 26 sensor values and 25 actuator operations.

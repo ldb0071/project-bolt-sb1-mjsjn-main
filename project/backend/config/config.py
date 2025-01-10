@@ -9,7 +9,7 @@ VIDEO_STORAGE_DIR = os.path.abspath(os.path.join(BASE_DIR, 'video_storage'))
 
 # API Keys
 YOUTUBE_API_KEY = 'AIzaSyAGkuC9cB1QcXOmbUuSdbUwlPcCEmOcj_0'
-GEMINI_API_KEY = 'AIzaSyBp0lmfw0QSHWrAwZVXGtmCxf2fhHzEHck'
+GEMINI_API_KEY = 'AIzaSyBQfQ7sN-ASKnlFe8Zg50xsp6qmDdZoweU'
 
 # Upload settings
 MAX_UPLOAD_SIZE = 100 * 1024 * 1024  # 100MB in bytes

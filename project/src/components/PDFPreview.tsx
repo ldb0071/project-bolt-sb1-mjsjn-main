@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, ChevronRight, Maximize2, Minimize2, Loader, AlertTriangle, X, LayoutGrid, Camera, Image, Trash2, Type } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Maximize2, Minimize2, Loader, AlertTriangle, X, LayoutGrid, Camera, Image, Trash2, Type, FileText, FileCode } from 'lucide-react';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
-import { toast } from '../services/toast';
+import toast from 'react-hot-toast';
 import html2canvas from 'html2canvas';
 import ReactCrop, { Crop } from 'react-image-crop';
 import 'react-image-crop/dist/ReactCrop.css';
 import { TextSelectionPopup } from './TextSelectionPopup';
+import { convertPDFToMarkdown } from '../services/apiClient';
 
 // Set worker source to CDN path for better reliability
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
@@ -176,6 +177,10 @@ const PDFFile: React.FC<PDFFileProps> = ({ file }) => {
   const [selectedText, setSelectedText] = useState('');
   const [selectionPosition, setSelectionPosition] = useState<{ x: number; y: number } | null>(null);
   const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null);
+  const [markdownPages, setMarkdownPages] = useState<string[]>([]);
+  const [currentMarkdownPage, setCurrentMarkdownPage] = useState(1);
+  const [markdownBasePath, setMarkdownBasePath] = useState<string | null>(null);
+  const [isMarkdownView, setIsMarkdownView] = useState(false);
 
   // Construct the full URL for the PDF file
   const fileUrl = file.path.startsWith('http') 
@@ -592,6 +597,51 @@ const PDFFile: React.FC<PDFFileProps> = ({ file }) => {
   });
 
   const Controls = () => {
+    const handleConvertToMarkdown = async () => {
+      try {
+        // Extract project name and file type from the file path
+        const pathParts = file.path.split('/');
+        const projectNameParts = pathParts.slice(3, -2);
+        const projectName = projectNameParts.join('/');
+        const fileType = pathParts[pathParts.length - 2] as 'uploaded' | 'downloaded';
+        const fileName = pathParts[pathParts.length - 1];
+
+        // Show loading toast
+        const loadingToast = toast.loading('Converting PDF to Markdown...');
+
+        try {
+          // Convert PDF to Markdown
+          const { content, totalPages, basePath } = await convertPDFToMarkdown(projectName, fileType, fileName);
+
+          // Store markdown content and switch to markdown view
+          setMarkdownPages(content);
+          setMarkdownBasePath(basePath);
+          setCurrentMarkdownPage(1);
+          setIsMarkdownView(true);
+
+          // Show success toast
+          toast.dismiss(loadingToast);
+          toast.success('PDF converted to Markdown successfully!');
+        } catch (error: any) {
+          console.error('Error converting PDF to Markdown:', error);
+          toast.dismiss(loadingToast);
+          
+          // Extract the detailed error message from the response if available
+          const errorDetail = error.response?.data?.detail || error.message || 'Failed to convert PDF to Markdown';
+          toast.error(errorDetail, {
+            duration: 5000,
+            style: {
+              maxWidth: '500px',
+              whiteSpace: 'pre-wrap',
+            },
+          });
+        }
+      } catch (error) {
+        console.error('Error in handleConvertToMarkdown:', error);
+        toast.error('An unexpected error occurred. Please try again.');
+      }
+    };
+
     return (
       <div className="flex items-center justify-between w-full px-4 py-2">
         <div className="flex items-center space-x-4">
@@ -670,6 +720,33 @@ const PDFFile: React.FC<PDFFileProps> = ({ file }) => {
           >
             <Type size={18} />
           </button>
+
+          <div className="h-6 w-px bg-navy-700" />
+
+          <button
+            onClick={handleConvertToMarkdown}
+            className="p-2 hover:bg-navy-800/80 rounded-xl text-gray-400 hover:text-white transition-all duration-200"
+            title="Convert to Markdown"
+          >
+            <FileText size={20} />
+          </button>
+
+          {markdownPages.length > 0 && (
+            <>
+              <div className="h-6 w-px bg-navy-700" />
+              <button
+                onClick={() => setIsMarkdownView(!isMarkdownView)}
+                className={`p-2 rounded-xl transition-all duration-200 ${
+                  isMarkdownView 
+                    ? 'bg-primary-500 text-white hover:bg-primary-600' 
+                    : 'text-gray-400 hover:bg-navy-800/80 hover:text-white'
+                }`}
+                title={isMarkdownView ? "Switch to PDF view" : "Switch to Markdown view"}
+              >
+                <FileCode size={20} />
+              </button>
+            </>
+          )}
         </div>
       </div>
     );
@@ -853,6 +930,43 @@ const PDFFile: React.FC<PDFFileProps> = ({ file }) => {
     };
   }, [handleTextSelection, isTextSelectionMode]);
 
+  const MarkdownPreview = () => {
+    if (!markdownPages.length) return null;
+
+    return (
+      <div className="w-full h-full flex flex-col">
+        <div className="flex items-center justify-between px-4 py-2 bg-navy-800 border-b border-navy-700">
+          <span className="text-sm text-gray-300">
+            Page {currentMarkdownPage} of {markdownPages.length}
+          </span>
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => setCurrentMarkdownPage(prev => Math.max(prev - 1, 1))}
+              disabled={currentMarkdownPage <= 1}
+              className="p-1 hover:bg-navy-700 rounded disabled:opacity-50 text-white"
+              title="Previous Page"
+            >
+              <ChevronLeft size={20} />
+            </button>
+            <button
+              onClick={() => setCurrentMarkdownPage(prev => Math.min(prev + 1, markdownPages.length))}
+              disabled={currentMarkdownPage >= markdownPages.length}
+              className="p-1 hover:bg-navy-700 rounded disabled:opacity-50 text-white"
+              title="Next Page"
+            >
+              <ChevronRight size={20} />
+            </button>
+          </div>
+        </div>
+        <div className="flex-1 overflow-auto bg-navy-900 rounded-lg p-6">
+          <pre className="text-gray-200 font-mono whitespace-pre-wrap">
+            {markdownPages[currentMarkdownPage - 1]}
+          </pre>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className={`relative w-full h-full flex ${isFullScreen ? 'fullscreen' : ''}`} ref={pdfContainerRef}>
       <div className="flex-1 relative">
@@ -868,32 +982,34 @@ const PDFFile: React.FC<PDFFileProps> = ({ file }) => {
                 <Controls />
               </div>
               <div className="flex-1 overflow-hidden p-4 flex items-center justify-center">
-                <PDFContent />
+                {isMarkdownView ? <MarkdownPreview /> : <PDFContent />}
               </div>
             </motion.div>
           ) : (
             <div className="bg-navy-900 rounded-xl border border-navy-700 overflow-hidden">
               <Controls />
               <div className="relative bg-navy-950 p-4 flex justify-center">
-                <Document
-                  file={fileUrl}
-                  onLoadSuccess={onDocumentLoadSuccess}
-                  onLoadError={(error: Error) => {
-                    console.error('Error loading document:', error);
-                    setError(error);
-                    setIsLoading(false);
-                    toast.error('Error loading PDF. Please try again.');
-                  }}
-                  loading={
-                    <div className="flex items-center justify-center p-4">
-                      <Loader className="animate-spin text-primary-400 mr-2" />
-                      <span className="text-gray-400">Loading PDF...</span>
-                    </div>
-                  }
-                  options={PDF_LOADING_OPTIONS}
-                >
-                  <PDFContent />
-                </Document>
+                {isMarkdownView ? <MarkdownPreview /> : (
+                  <Document
+                    file={fileUrl}
+                    onLoadSuccess={onDocumentLoadSuccess}
+                    onLoadError={(error: Error) => {
+                      console.error('Error loading document:', error);
+                      setError(error);
+                      setIsLoading(false);
+                      toast.error('Error loading PDF. Please try again.');
+                    }}
+                    loading={
+                      <div className="flex items-center justify-center p-4">
+                        <Loader className="animate-spin text-primary-400 mr-2" />
+                        <span className="text-gray-400">Loading PDF...</span>
+                      </div>
+                    }
+                    options={PDF_LOADING_OPTIONS}
+                  >
+                    <PDFContent />
+                  </Document>
+                )}
               </div>
             </div>
           )}

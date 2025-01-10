@@ -1,14 +1,36 @@
-import { apiClient } from './apiClient';
+/**
+ * Frontend Chat Service Module
+ * 
+ * This module handles the frontend chat functionality, including:
+ * - Message management and formatting
+ * - AI model integration (Gemini and Azure)
+ * - Role-based chat configuration
+ * - ArXiv paper integration
+ * - Admin command processing
+ * 
+ * @module chatService
+ */
 
+import { apiClient } from './apiClient';
+import { useStore } from '../store/useStore';
+import { Tool } from './toolService';
+import { handleAdminCommand, AdminCommandResult } from './adminService';
+
+/**
+ * Represents a chat message in the system
+ */
 export interface ChatMessage {
   id: string;
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'system';
   content: string;
   image?: string;
   arxivPapers?: ArxivPaper[];
   timestamp?: string;
 }
 
+/**
+ * Represents an ArXiv paper with its metadata
+ */
 export interface ArxivPaper {
   id: string;
   title: string;
@@ -17,12 +39,21 @@ export interface ArxivPaper {
   pdfUrl: string;
 }
 
+/**
+ * Represents a search result item
+ */
 export interface SearchResult {
   title: string;
   url: string;
   description: string;
 }
 
+/**
+ * Searches ArXiv for relevant papers based on query
+ * 
+ * @param query - The search query
+ * @returns Promise<ArxivPaper[]> - Array of relevant papers
+ */
 async function searchArxiv(query: string): Promise<ArxivPaper[]> {
   try {
     // Enhance query for medical segmentation papers
@@ -119,69 +150,64 @@ PDF URL: ${arxivPaper.pdfUrl}\n\n`;
   }
 }
 
-export type AssistantRole = 'default' | 'researcher' | 'developer' | 'analyst' | 'medical';
+export type AssistantRole = 'default' | 'researcher' | 'developer' | 'analyst' | 'medical' | 'imageAnalyst' | 'administrator' | string;
 
 export interface RoleConfig {
   title: string;
   description: string;
   systemPrompt: string;
+  isDisabled?: boolean;
 }
 
 export const ROLE_CONFIGS: Record<AssistantRole, RoleConfig> = {
   default: {
-    title: 'General Assistant',
-    description: 'A helpful AI assistant for general conversations',
-    systemPrompt: 'You are a helpful AI assistant. When provided with ArXiv papers or web search results, use them to enhance your responses with current information.'
-  },
-  researcher: {
-    title: 'AI Research Analyst',
-    description: 'Specialized in AI model analysis with ArXiv paper integration',
-    systemPrompt: `You are an AI research analyst specializing in model evaluation and comparison, with access to ArXiv papers. Your expertise includes:
-
-1. Comprehensive model analysis:
-- State-of-the-art performance metrics
-- Benchmark comparisons
-- Architecture details
-- Training requirements
-- Resource considerations
-
-2. Data presentation:
-- Present comparisons in markdown tables
-- Include key metrics (accuracy, F1-score, mAP, etc.)
-- List advantages and limitations
-- Provide implementation considerations
-
-3. Research synthesis:
-- Analyze ArXiv papers in detail
-- Cite relevant papers with years
-- Compare across different approaches
-- Highlight recent developments
-- Consider practical deployment factors
-
-When discussing models or papers, always structure your response with:
-1. Brief overview of the domain
-2. Analysis of relevant ArXiv papers
-3. Comparison table of top models/approaches
-4. Detailed technical analysis
-5. Practical recommendations
-6. References to papers and sources
-
-Use markdown formatting for better readability. When ArXiv papers are provided, analyze their methodology, results, and implications in detail.`
+    title: 'Assistant',
+    description: 'A helpful AI assistant',
+    systemPrompt: 'You are a helpful AI assistant. Answer questions and help with tasks in a clear and concise manner.'
   },
   developer: {
-    title: 'Software Developer',
-    description: 'Specialized in software development, coding, and technical solutions',
-    systemPrompt: 'You are a software developer with expertise in programming, system design, and technical problem-solving. Provide detailed technical explanations, code examples when relevant, and focus on best practices and efficient solutions. Consider scalability, maintainability, and performance in your responses.'
+    title: 'Developer',
+    description: 'A software development expert',
+    systemPrompt: 'You are an expert software developer. Help with coding tasks, debugging, and technical questions.'
+  },
+  researcher: {
+    title: 'Researcher',
+    description: 'A research and academic expert',
+    systemPrompt: 'You are a research expert. Help with academic research, literature review, and scientific analysis.'
   },
   analyst: {
-    title: 'Data Analyst',
-    description: 'Specialized in data analysis, statistics, and research interpretation',
-    systemPrompt: 'You are a data analyst with expertise in interpreting research findings, statistical analysis, and data visualization. Focus on extracting meaningful insights from data, explaining statistical concepts, and providing data-driven recommendations.'
+    title: 'Analyst',
+    description: 'A data analysis expert',
+    systemPrompt: 'You are a data analysis expert. Help with data analysis, visualization, and interpretation.'
   },
   medical: {
     title: 'Medical Expert',
-    description: 'Specialized in medical imaging, segmentation, and healthcare AI',
-    systemPrompt: 'You are a medical AI expert with deep knowledge of medical imaging, segmentation models, and healthcare applications. Provide detailed technical analysis of medical imaging models, focusing on accuracy, performance, and clinical applications. Consider factors like data requirements, preprocessing, and validation methods.'
+    description: 'A medical and healthcare expert',
+    systemPrompt: 'You are a medical expert. Help with medical research and healthcare-related questions.'
+  },
+  administrator: {
+    title: 'Administrator',
+    description: 'A system administrator with tool and role management capabilities',
+    systemPrompt: `You are a system administrator with the ability to manage tools and roles through natural language commands.
+
+Available commands:
+
+Tool Management:
+- Create a new tool: "create a new tool 'name' with description 'desc' at endpoint 'url' using GET/POST with parameters 'params' requires API key 'key_param'"
+- Edit a tool: "edit the tool 'name' set [property] to 'value'"
+- Remove a tool: "remove the tool 'name'"
+- Show tool config: "show me the configuration for tool 'name'"
+- Enable/disable tool: "enable/disable tool 'name'"
+- List tools: "list all tools"
+
+Role Management:
+- Create a new role: "create a new role 'name' with description 'desc' with prompt 'system_prompt'"
+- Edit a role: "edit the role 'name' set [property] to 'value'"
+- Remove a role: "remove the role 'name'"
+- Show role config: "show me the configuration for role 'name'"
+- List roles: "list all roles"
+
+Please provide clear and specific commands, and I'll help you manage the system configuration.`
   }
 };
 
@@ -195,142 +221,498 @@ export interface GeminiResponse {
   }[];
 }
 
-export const sendChatMessage = async (
-  messages: ChatMessage[], 
-  apiKey: string,
-  role: AssistantRole = 'default'
-): Promise<{ content: string; arxivPapers?: ArxivPaper[] }> => {
-  try {
-    if (!apiKey) {
-      throw new Error('API key is required');
-    }
+const formatArxivContext = (arxivPapers: ArxivPaper[]): string => {
+  if (arxivPapers.length === 0) return "";
 
-    const contextMessages = messages.slice(-10);
-    const lastMessage = contextMessages[contextMessages.length - 1];
-
-    // Search ArXiv if the message seems to be a research query
-    const isResearchQuery = /research|paper|model|algorithm|method|arxiv|study|medical|segmentation/i.test(lastMessage.content);
-    let arxivPapers: ArxivPaper[] = [];
-    if (isResearchQuery) {
-      arxivPapers = await searchArxiv(lastMessage.content);
-      console.log('Found ArXiv papers:', arxivPapers);
-    }
-
-    // Get context including ArXiv paper details if available
-    const additionalContext = await enhanceWithContext(
-      lastMessage.content,
-      arxivPapers[0] // Use the most relevant paper
-    );
-
-    // Format ArXiv papers for context
-    const arxivContext = arxivPapers.length > 0 
-      ? "\n\nRelevant Medical Segmentation Papers:\n\n" + 
-        "| Paper | Authors | Links |\n" +
-        "|-------|---------|-------|\n" +
-        arxivPapers.map((paper, index) => 
-          `| ${index + 1}. ${paper.title} | ${paper.authors.join(', ')} | [📄 PDF](${paper.pdfUrl}) [📚 ArXiv](https://arxiv.org/abs/${paper.id}) |`
-        ).join('\n') +
-        "\n\n### Paper Details\n\n" +
-        arxivPapers.map((paper, index) => 
+  return (
+    "\n\nRelevant Medical Segmentation Papers:\n\n" +
+    "| Paper | Authors | Links |\n" +
+    "|-------|---------|-------|\n" +
+    arxivPapers
+      .map(
+        (paper, index) =>
+          `| ${index + 1}. ${paper.title} | ${paper.authors.join(
+            ", "
+          )} | [📄 PDF](${paper.pdfUrl}) [📚 ArXiv](https://arxiv.org/abs/${
+            paper.id
+          }) |`
+      )
+      .join("\n") +
+    "\n\n### Paper Details\n\n" +
+    arxivPapers
+      .map(
+        (paper, index) =>
           `### ${index + 1}. ${paper.title}\n\n` +
-          `**Authors:** ${paper.authors.join(', ')}\n\n` +
+          `**Authors:** ${paper.authors.join(", ")}\n\n` +
           `**Summary:** ${paper.summary}\n\n` +
           `**Links:**\n` +
           `- [📄 Download PDF](${paper.pdfUrl})\n` +
           `- [📚 View on ArXiv](https://arxiv.org/abs/${paper.id})\n` +
           `- [📝 BibTeX](https://arxiv.org/bibtex/${paper.id})\n`
-        ).join('\n\n')
-      : "";
+      )
+      .join("\n\n")
+  );
+};
 
-    const formattedMessages = [
-      {
-        parts: [{ 
-          text: ROLE_CONFIGS[role].systemPrompt + 
-                "\n\nPlease analyze the provided papers and format your response as follows:\n" +
-                "1. A brief overview of each paper's main contributions\n" +
-                "2. A comparison table using this exact format:\n\n" +
-                "| Method | Dataset | Performance | Year |\n" +
-                "|--------|---------|-------------|------|\n" +
-                "| Method Name | Dataset Name | Performance Metric | YYYY |\n\n" +
-                "Note: Ensure the table is properly formatted with:\n" +
-                "- Aligned columns using | character\n" +
-                "- Header row separator using dashes (-)\n" +
-                "- Consistent spacing in cells\n" +
-                "- Exact performance metrics (e.g., 95.2% mean Dice)\n\n" +
-                "3. Key findings and practical applications\n" +
-                "4. References to specific sections in the papers" +
-                (arxivContext ? "\n\n" + arxivContext : "") +
-                (additionalContext ? "\n\n" + additionalContext : "")
-        }]
-      }
-    ];
+const buildGeminiPrompt = (
+  role: AssistantRole,
+  arxivContext: string,
+  additionalContext: string
+): { parts: { text: string }[] }[] => {
+  const prompt = ROLE_CONFIGS[role].systemPrompt +
+    "\n\nPlease analyze the provided papers and format your response as follows:\n" +
+    "1. A brief overview of each paper's main contributions\n" +
+    "2. A comparison table using this exact format:\n\n" +
+    "| Method | Dataset | Performance | Year |\n" +
+    "|--------|---------|-------------|------|\n" +
+    "| Method Name | Dataset Name | Performance Metric | YYYY |\n\n" +
+    "Note: Ensure the table is properly formatted with:\n" +
+    "- Aligned columns using | character\n" +
+    "- Header row separator using dashes (-)\n" +
+    "- Consistent spacing in cells\n" +
+    "- Exact performance metrics (e.g., 95.2% mean Dice)\n\n" +
+    "3. Key findings and practical applications\n" +
+    "4. References to specific sections in the papers" +
+    (arxivContext ? "\n\n" + arxivContext : "") +
+    (additionalContext ? "\n\n" + additionalContext : "");
 
-    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=' + apiKey, {
+  return [{
+    parts: [{
+      text: prompt
+    }]
+  }];
+};
+
+const callGeminiAPI = async (
+  formattedMessages: { role: 'user' | 'assistant' | 'system'; parts: { text: string }[] }[],
+  apiKey: string,
+  model: ModelId = "gemini-1.5-flash"
+): Promise<any> => {
+  // Clean and validate the API key
+  const cleanApiKey = apiKey.replace(/^AIzaSyB-/, '').replace(/lBxinyrKi9Jlx2m-AXfPwuDP4uVlYpU$/, '').trim();
+  
+  if (!cleanApiKey.startsWith('AIzaSy')) {
+    throw new Error('Invalid API key format');
+  }
+
+  const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
+  
+  console.log('Using API key:', cleanApiKey); // For debugging
+  
+  const response = await fetch(`${url}?key=${cleanApiKey}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      contents: formattedMessages.map(msg => ({
+        role: msg.role,
+        parts: msg.parts
+      }))
+    }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    console.error("API Error:", errorData);
+    throw new Error(
+      errorData.error?.message || "Failed to get response from Gemini API"
+    );
+  }
+
+  return await response.json();
+};
+
+const formatResponse = (content: string): string => {
+  // Remove excessive newlines and spaces
+  let formatted = content.replace(/\n{3,}/g, '\n\n').trim();
+
+  // Add markdown formatting for code blocks
+  formatted = formatted.replace(/```(\w+)?\n([\s\S]*?)\n```/g, (_, lang, code) => {
+    return `\n\`\`\`${lang || ''}\n${code.trim()}\n\`\`\`\n`;
+  });
+
+  // Format lists consistently
+  formatted = formatted.replace(/^[•●∙-]\s/gm, '- ');
+
+  // Format headers consistently
+  formatted = formatted.replace(/^(#+)\s*/gm, (_, hashes) => `${hashes} `);
+
+  // Format bold text
+  formatted = formatted.replace(/\*\*([^*]+)\*\*/g, '**$1**');
+
+  // Format inline code
+  formatted = formatted.replace(/`([^`]+)`/g, '`$1`');
+
+  // Add spacing around sections
+  formatted = formatted.replace(/\n(#+\s[^\n]+)/g, '\n\n$1');
+
+  return formatted;
+};
+
+// Update model types to only include gpt-4o for Azure
+export type AzureModelId = 'gpt-4o';
+export type ModelId = 'gemini-2.0-flash-exp' | 'gemini-1.5-flash' | 'gemini-1.0-pro' | 'gemini-1.5-pro' | 'gemini-2.0-flash-thinking-exp-1219' | AzureModelId;
+
+export const AVAILABLE_MODELS: Record<ModelId, { name: string; type: 'gemini' | 'azure' }> = {
+  'gemini-2.0-flash-exp': { name: 'Gemini 2.0 Flash (Experimental)', type: 'gemini' },
+  'gemini-1.5-flash': { name: 'Gemini 1.5 Flash', type: 'gemini' },
+  'gemini-1.0-pro': { name: 'Gemini 1.0 Pro', type: 'gemini' },
+  'gemini-1.5-pro': { name: 'Gemini 1.5 Pro', type: 'gemini' },
+  'gemini-2.0-flash-thinking-exp-1219': { name: 'Gemini 2.0 Flash Thinking', type: 'gemini' },
+  'gpt-4o': { name: 'GPT-4', type: 'azure' }
+};
+
+const callAzureAPI = async (
+  messages: { role: string; content: string }[],
+  githubToken: string
+): Promise<any> => {
+  try {
+    console.log('Starting Azure API call...');
+    console.log('Messages:', JSON.stringify(messages, null, 2));
+
+    const response = await fetch('http://localhost:8080/api/chat', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Authorization': `Bearer ${githubToken}`
       },
       body: JSON.stringify({
-        contents: formattedMessages,
-        generationConfig: {
-          temperature: 0.7,
-          topK: 40,
-          topP: 0.95,
-          maxOutputTokens: 2048,
-        },
-        safetySettings: [
-          {
-            category: "HARM_CATEGORY_HARASSMENT",
-            threshold: "BLOCK_MEDIUM_AND_ABOVE"
-          },
-          {
-            category: "HARM_CATEGORY_HATE_SPEECH",
-            threshold: "BLOCK_MEDIUM_AND_ABOVE"
-          },
-          {
-            category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-            threshold: "BLOCK_MEDIUM_AND_ABOVE"
-          },
-          {
-            category: "HARM_CATEGORY_DANGEROUS_CONTENT",
-            threshold: "BLOCK_MEDIUM_AND_ABOVE"
-          }
-        ]
+        messages,
+        model: 'gpt-4o'
       })
     });
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      console.error('API Error:', errorData);
-      throw new Error(errorData.error?.message || 'Failed to get response from Gemini API');
+      const errorText = await response.text();
+      console.error('Azure API Error:', {
+        status: response.status,
+        statusText: response.statusText,
+        error: errorText
+      });
+      throw new Error(`Azure API error: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json();
-    console.log('Gemini API Response:', data);
+    console.log('Azure API Response:', data);
+    return {
+      content: formatResponse(data.content)
+    };
+  } catch (error) {
+    console.error('Azure API Error:', error);
+    throw error;
+  }
+};
 
-    // Get the response text
-    let responseText = '';
-    if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
-      responseText = data.candidates[0].content.parts[0].text;
-    } else if (data.candidates?.[0]?.content?.text) {
-      responseText = data.candidates[0].content.text;
-    } else if (data.text) {
-      responseText = data.text;
-    } else if (typeof data === 'string') {
-      responseText = data;
-    } else if (data.candidates?.[0]?.output) {
-      responseText = data.candidates[0].output;
-    } else {
-      responseText = JSON.stringify(data, null, 2);
+const extractGeminiResponse = (data: any): string => {
+  let responseText = "";
+  if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
+    responseText = data.candidates[0].content.parts[0].text;
+  } else if (data.candidates?.[0]?.content?.text) {
+    responseText = data.candidates[0].content.text;
+  } else if (data.text) {
+    responseText = data.text;
+  } else if (typeof data === "string") {
+    responseText = data;
+  } else if (data.candidates?.[0]?.output) {
+    responseText = data.candidates[0].output;
+  } else {
+    responseText = JSON.stringify(data, null, 2);
+  }
+  return formatResponse(responseText);
+};
+
+// Add paper count extraction function
+const extractPaperCount = (message: string): number => {
+  // Look for patterns like "show me 10 papers" or "find 15 research papers"
+  const match = message.match(/(?:show|find|get|search|display)\s+(\d+)\s+(?:papers?|research papers?|articles?)/i);
+  return match ? parseInt(match[1]) : 5; // Default to 5 if no number specified
+};
+
+export interface CustomRole {
+  id: string;
+  config: RoleConfig;
+  isCustom: true;
+}
+
+export interface ModifiedBuiltInRole {
+  originalRole: AssistantRole;
+  config: RoleConfig;
+}
+
+export const sendChatMessage = async (
+  messages: ChatMessage[],
+  apiKey: string = "AIzaSyBQfQ7sN-ASKnlFe8Zg50xsp6qmDdZoweU",
+  role: AssistantRole = "default",
+  model: ModelId = "gemini-1.5-flash",
+  githubToken?: string
+): Promise<{ content: string; arxivPapers?: ArxivPaper[] }> => {
+  try {
+    console.log('Starting sendChatMessage...');
+    console.log('Model:', model);
+    
+    const modelConfig = AVAILABLE_MODELS[model];
+    if (!modelConfig) {
+      throw new Error(`Invalid model: ${model}`);
     }
 
-    // Return both the response text and any referenced ArXiv papers
-    return {
-      content: responseText,
-      arxivPapers: arxivPapers // Include all found papers
-    };
+    // Get role configuration
+    let roleConfig: RoleConfig;
+    if (role.startsWith('custom_')) {
+      const customRole = useStore.getState().customRoles.find(r => r.id === role.replace('custom_', ''));
+      if (!customRole) {
+        throw new Error(`Custom role not found: ${role}`);
+      }
+      roleConfig = customRole.config;
+    } else {
+      const builtInConfig = useStore.getState().getBuiltInRoleConfig(role as AssistantRole);
+      if (builtInConfig.isDisabled) {
+        throw new Error(`Role is disabled: ${role}`);
+      }
+      roleConfig = builtInConfig;
+    }
+
+    // Get the last message to check for research queries
+    const lastMessage = messages[messages.length - 1];
+    const isResearchQuery = /research|paper|model|algorithm|method|arxiv|study|medical|segmentation/i.test(
+      lastMessage.content
+    );
+
+    // Search for relevant papers if it's a research query
+    let arxivPapers: ArxivPaper[] = [];
+    if (isResearchQuery) {
+      try {
+        // Extract desired number of papers from the message
+        const paperCount = extractPaperCount(lastMessage.content);
+        console.log(`Requesting ${paperCount} papers`);
+
+        const response = await fetch(
+          `http://localhost:8080/api/arxiv/search?query=${encodeURIComponent(lastMessage.content)}&max_results=${paperCount}`
+        );
+        if (response.ok) {
+          const data = await response.json();
+          arxivPapers = data.papers;
+          console.log(`Found ${arxivPapers.length} papers:`, arxivPapers);
+        }
+      } catch (error) {
+        console.error("Error fetching ArXiv papers:", error);
+      }
+    }
+
+    // Format the response based on the model type
+    if (modelConfig.type === 'azure') {
+      console.log('Using Azure model with GitHub token');
+      if (!githubToken) {
+        throw new Error("GitHub token is required for Azure OpenAI models");
+      }
+
+      // Format messages for Azure API
+      const formattedMessages = messages.map(msg => ({
+        role: msg.role,
+        content: msg.content || ''
+      }));
+
+      // Add system message with research paper summarization format
+      let systemPrompt = `${ROLE_CONFIGS[role].systemPrompt || 'You are a helpful research assistant.'}\n\n`;
+      systemPrompt += 'Please structure your research summary in the following format:\n\n';
+      systemPrompt += '# Research Summary\n\n';
+      systemPrompt += '## Key Research Questions\n';
+      systemPrompt += '- List the main research questions addressed\n\n';
+      systemPrompt += '## Methodology Overview\n';
+      systemPrompt += '- Research approach\n';
+      systemPrompt += '- Data collection methods\n';
+      systemPrompt += '- Analysis techniques\n\n';
+      systemPrompt += '## Key Findings\n';
+      systemPrompt += '- Main results and discoveries\n';
+      systemPrompt += '- Statistical significance\n';
+      systemPrompt += '- Practical implications\n\n';
+      systemPrompt += '## Technical Implementation\n';
+      systemPrompt += '- Algorithms used\n';
+      systemPrompt += '- Model architectures\n';
+      systemPrompt += '- Performance metrics\n\n';
+      systemPrompt += '## Benchmarking Results\n';
+      systemPrompt += '| Model/Method | Metrics | Performance |\n';
+      systemPrompt += '|--------------|---------|-------------|\n\n';
+      systemPrompt += '## Future Research Directions\n';
+      systemPrompt += '- Limitations of current approach\n';
+      systemPrompt += '- Potential improvements\n';
+      systemPrompt += '- Open research questions\n\n';
+      systemPrompt += '## Critical Analysis\n';
+      systemPrompt += '- Strengths of the approach\n';
+      systemPrompt += '- Limitations and constraints\n';
+      systemPrompt += '- Comparison with existing methods\n\n';
+
+      if (arxivPapers.length > 0) {
+        systemPrompt += '# Relevant Research Papers\n\n';
+        arxivPapers.forEach((paper, index) => {
+          systemPrompt += `## Paper ${index + 1}: ${paper.title}\n\n`;
+          systemPrompt += `**Authors:** ${paper.authors.join(', ')}\n\n`;
+          systemPrompt += `**Summary:**\n${paper.summary}\n\n`;
+          systemPrompt += `**Key Contributions:**\n`;
+          systemPrompt += `- Extract and list key contributions from the summary\n`;
+          systemPrompt += `- Focus on novel methods and findings\n`;
+          systemPrompt += `- Highlight practical applications\n\n`;
+          systemPrompt += `**Technical Details:**\n`;
+          systemPrompt += `- Methods and algorithms used\n`;
+          systemPrompt += `- Performance metrics and results\n`;
+          systemPrompt += `- Implementation details\n\n`;
+          systemPrompt += `**PDF Link:** [${paper.title}](${paper.pdfUrl})\n\n`;
+        });
+      }
+
+      formattedMessages.unshift({
+        role: 'system',
+        content: systemPrompt
+      });
+
+      console.log('Formatted messages for Azure:', formattedMessages);
+      const response = await callAzureAPI(formattedMessages, githubToken);
+      return {
+        content: response.content,
+        arxivPapers
+      };
+    } else if (modelConfig.type === 'gemini') {
+      console.log('Using Gemini model with API key');
+      if (!apiKey) {
+        throw new Error("API key is required for Gemini models");
+      }
+
+      const contextMessages = messages.slice(-10);
+      const lastMessage = contextMessages[contextMessages.length - 1];
+
+      // Handle image if present
+      if (lastMessage.image) {
+        const response = await fetch(
+          'http://localhost:8000/api/analyze',
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              text: lastMessage.content || "Please analyze this image",
+              image: lastMessage.image
+            })
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error('Failed to analyze image');
+        }
+
+        const data = await response.json();
+        return {
+          content: formatResponse(data.response),
+          arxivPapers
+        };
+      }
+
+      // Format messages for Gemini with paper context
+      let paperContext = '';
+      if (arxivPapers.length > 0) {
+        paperContext = '\n### Relevant Research Papers\n' + arxivPapers.map(paper => 
+          `- **${paper.title}** by ${paper.authors.join(', ')}\n  ${paper.summary}`
+        ).join('\n\n');
+      }
+
+      // Add formatting instructions to the context
+      const formattingInstructions = `
+Please format your response using markdown:
+- Use headers (# ## ###) for sections
+- Use bullet points for lists
+- Use code blocks with language specification
+- Use bold for emphasis
+- Keep responses clear and well-structured
+`;
+
+      const formattedMessages = contextMessages.map((msg, index) => ({
+        role: msg.role,
+        parts: [{ 
+          text: index === 0 
+            ? `${roleConfig.systemPrompt}\n\n${formattingInstructions}${msg.content || ''}`
+            : index === contextMessages.length - 1 && paperContext 
+              ? msg.content + paperContext 
+              : msg.content || '' 
+        }],
+      }));
+
+      const response = await callGeminiAPI(formattedMessages, apiKey, model);
+      const content = extractGeminiResponse(response);
+
+      return {
+        content,
+        arxivPapers
+      };
+    }
+
+    throw new Error(`Unsupported model type: ${modelConfig.type}`);
   } catch (error) {
     console.error('Error in sendChatMessage:', error);
     throw error;
   }
 };
+
+async function handleMessage(message: string, role: AssistantRole, chatId: string): Promise<string> {
+  const store = useStore.getState();
+  
+  // Handle administrator commands
+  if (role === 'administrator') {
+    try {
+      const result = await handleAdminCommand(message);
+      return formatAdminCommandResult(result);
+    } catch (error) {
+      return error instanceof Error 
+        ? `Error: ${error.message}`
+        : 'An unknown error occurred while processing the administrator command.';
+    }
+  }
+
+  // Handle regular chat messages
+  // ... existing message handling code ...
+  return 'Message processed successfully'; // Add a default return statement
+}
+
+function formatAdminCommandResult(result: AdminCommandResult): string {
+  if (!result.success) {
+    return `Error: ${result.message}`;
+  }
+
+  let response = result.message;
+
+  if (result.data) {
+    if (typeof result.data === 'object') {
+      // Format specific data types
+      if ('customTools' in result.data && 'builtInTools' in result.data) {
+        response += '\n\nBuilt-in Tools:\n' + formatToolList(result.data.builtInTools);
+        if (result.data.customTools.length > 0) {
+          response += '\n\nCustom Tools:\n' + formatToolList(result.data.customTools);
+        }
+      } else if ('customRoles' in result.data && 'builtInRoles' in result.data) {
+        response += '\n\nBuilt-in Roles:\n' + formatRoleList(result.data.builtInRoles);
+        if (result.data.customRoles.length > 0) {
+          response += '\n\nCustom Roles:\n' + formatRoleList(result.data.customRoles);
+        }
+      } else {
+        // For individual tool/role configurations
+        response += '\n\n' + JSON.stringify(result.data, null, 2);
+      }
+    } else {
+      response += '\n\n' + result.data;
+    }
+  }
+
+  return response;
+}
+
+function formatToolList(tools: Tool[]): string {
+  return tools.map(tool => 
+    `- ${tool.name}: ${tool.description} (${tool.isEnabled ? 'Enabled' : 'Disabled'})`
+  ).join('\n');
+}
+
+function formatRoleList(roles: any[]): string {
+  return roles.map(role => {
+    const config = role.config || role;
+    return `- ${config.title}: ${config.description}`;
+  }).join('\n');
+}

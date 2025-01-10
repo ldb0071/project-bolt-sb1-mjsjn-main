@@ -1,3 +1,23 @@
+"""
+Backend Chat Service Module
+
+This module implements the core chat functionality using Google's Generative AI models.
+It handles real-time chat interactions, image analysis, and rate limiting.
+
+Key Components:
+- RateLimiter: Controls API request frequency
+- ChatService: Main class managing chat interactions
+- Model management and configuration
+- WebSocket communication
+- Image processing and analysis
+
+Dependencies:
+- google.generativeai: Google's Generative AI API
+- fastapi: For WebSocket and HTTP endpoints
+- PIL: For image processing
+- asyncio: For asynchronous operations
+"""
+
 import json
 import asyncio
 import base64
@@ -9,16 +29,31 @@ import io
 import time
 from datetime import datetime, timedelta
 from fastapi.websockets import WebSocketState
+import requests
 
 ModelType = Literal['gemini-pro', 'gemini-pro-vision', 'embedding-001']
 
 class RateLimiter:
+    """
+    Rate limiting implementation to control API request frequency.
+    
+    Attributes:
+        max_requests (int): Maximum number of requests allowed in the window
+        window_seconds (int): Time window in seconds
+        requests (List[float]): List of request timestamps
+    """
     def __init__(self, max_requests: int = 10, window_seconds: int = 60):
         self.max_requests = max_requests
         self.window_seconds = window_seconds
         self.requests = []
 
     def can_proceed(self) -> bool:
+        """
+        Check if a new request can proceed based on rate limits.
+        
+        Returns:
+            bool: True if request can proceed, False otherwise
+        """
         current_time = time.time()
         self.requests = [req_time for req_time in self.requests 
                         if current_time - req_time < self.window_seconds]
@@ -29,21 +64,64 @@ class RateLimiter:
         return False
 
 class ChatService:
+    """
+    Main service class for handling chat interactions with Gemini AI models.
+    
+    This class manages:
+    - Multiple AI model configurations
+    - Real-time chat streaming
+    - Image analysis
+    - Rate limiting
+    - Chat history tracking
+    - PDF context integration
+    
+    Attributes:
+        AVAILABLE_MODELS (Dict): Dictionary of available AI models
+        api_key (str): API key for Gemini AI
+        models (Dict): Initialized model instances
+        current_text_model (str): Currently selected text model
+        current_vision_model (str): Currently selected vision model
+        chat_history (List): List of chat messages
+        rate_limiter (RateLimiter): Rate limiting instance
+        pdf_context (Optional[str]): Current PDF context for chat
+    """
+
     AVAILABLE_MODELS = {
-        'gemini-pro': 'gemini-pro',  # For text
+        'gemini-2.0-flash-exp': 'gemini-2.0-flash-exp',  # Latest experimental model
+        'gemini-1.5-flash': 'gemini-1.5-flash',  # Standard flash model
+        'gemini-1.0-pro': 'gemini-1.0-pro',  # Original pro model
+        'gemini-1.5-pro': 'gemini-1.5-pro',  # Updated pro model
+        'gemini-2.0-flash-thinking-exp-1219': 'gemini-2.0-flash-thinking-exp-1219',  # Experimental thinking model
         'gemini-pro-vision': 'gemini-pro-vision',  # For images
         'embedding-001': 'embedding-001'  # For embeddings
     }
 
-    def __init__(self, api_key: str = "AIzaSyB-lBxinyrKi9Jlx2m-AXfPwuDP4uVlYpU"):
-        genai.configure(api_key=api_key)
+    def __init__(self, api_key: str = "AIzaSyBQfQ7sN-ASKnlFe8Zg50xsp6qmDdZoweU"):
+        """
+        Initialize the ChatService with API key and model configurations.
+        
+        Args:
+            api_key (str): Gemini AI API key
+        
+        Raises:
+            ValueError: If API key format is invalid
+        """
+        # Clean and validate the API key
+        self.api_key = api_key.replace(r'^AIzaSyB-', '').replace(r'lBxinyrKi9Jlx2m-AXfPwuDP4uVlYpU$', '').strip()
+        
+        if not self.api_key.startswith('AIzaSy'):
+            raise ValueError('Invalid API key format')
+            
+        print(f"Using API key: {self.api_key}")  # For debugging
+        
+        genai.configure(api_key=self.api_key)
         self.models: Dict[str, genai.GenerativeModel] = {}
-        self.current_text_model: str = 'gemini-pro'
+        self.current_text_model: str = 'gemini-1.5-flash'
         self.current_vision_model: str = 'gemini-pro-vision'
         self.chat_history: List[Dict[str, str]] = []
         self.rate_limiter = RateLimiter()
-        self._initialize_models()
         self.pdf_context = None
+        self._initialize_models()
 
     def _initialize_models(self):
         for model_name, api_name in self.AVAILABLE_MODELS.items():
@@ -85,38 +163,124 @@ class ChatService:
 
             if image:
                 try:
-                    model = self.models[self.current_vision_model]
-                    if not model:
-                        if websocket and websocket.client_state != WebSocketState.DISCONNECTED:
-                            await websocket.send_json({
-                                "error": f"Vision model {self.current_vision_model} is not available"
-                            })
-                        return
-
                     # Process base64 image
                     try:
-                        image_data = base64.b64decode(image.split(',')[1])
-                        image_obj = Image.open(io.BytesIO(image_data))
+                        # Remove the data URL prefix if present
+                        if ',' in image:
+                            image_data = base64.b64decode(image.split(',')[1])
+                        else:
+                            image_data = base64.b64decode(image)
                     except Exception as e:
                         if websocket and websocket.client_state != WebSocketState.DISCONNECTED:
                             await websocket.send_json({"error": "Invalid image data"})
                         return
 
-                    # Get streaming response from vision model
-                    response = model.generate_content([message, image_obj], stream=True)
+                    # Use user's message if provided, otherwise use default prompt
+                    prompt = message if message.strip() else "Please analyze this image in detail."
+
+                    # Format request data for image analysis
+                    url = 'https://generativelanguage.googleapis.com/v1/models/gemini-pro-vision:generateContent'
+                    headers = {
+                        'Content-Type': 'application/json',
+                    }
+                    
+                    # Format the request according to the Gemini Vision API specification
+                    data = {
+                        'contents': [
+                            {
+                                'parts': [
+                                    {
+                                        'text': prompt
+                                    },
+                                    {
+                                        'inline_data': {
+                                            'mime_type': 'image/jpeg',
+                                            'data': base64.b64encode(image_data).decode('utf-8')
+                                        }
+                                    }
+                                ]
+                            }
+                        ],
+                        'safety_settings': {
+                            'category': 'HARM_CATEGORY_DANGEROUS_CONTENT',
+                            'threshold': 'BLOCK_NONE'
+                        },
+                        'generation_config': {
+                            'temperature': 0.4,
+                            'topP': 1,
+                            'topK': 32,
+                            'maxOutputTokens': 2048
+                        }
+                    }
+
+                    print("Sending request to Gemini Vision API...")
+                    print(f"URL: {url}")
+                    print(f"Prompt: {prompt}")
+
+                    # Make request to Gemini Vision API
+                    response = requests.post(
+                        f'{url}?key={self.api_key}',
+                        headers=headers,
+                        json=data
+                    )
+
+                    print(f"Response status: {response.status_code}")
+
+                    if not response.ok:
+                        error_msg = f"API request failed with status {response.status_code}"
+                        try:
+                            error_data = response.json()
+                            print(f"Error response: {error_data}")
+                            if 'error' in error_data:
+                                error_msg = f"{error_msg}: {error_data['error'].get('message', '')}"
+                        except:
+                            pass
+                        raise Exception(error_msg)
+
+                    # Process the response
+                    response_data = response.json()
+                    print(f"Response data: {response_data}")
+
+                    if 'candidates' in response_data and len(response_data['candidates']) > 0:
+                        # Extract the text from the response
+                        analysis_text = response_data['candidates'][0]['content']['parts'][0]['text']
+                        
+                        # Send the complete analysis
+                        if websocket and websocket.client_state != WebSocketState.DISCONNECTED:
+                            await websocket.send_json({
+                                "chunk": analysis_text,
+                                "done": True,
+                                "full_response": analysis_text
+                            })
+
+                        # Store in chat history
+                        self.chat_history.append({
+                            "role": "user",
+                            "content": prompt,
+                            "image": image,
+                            "timestamp": datetime.now().isoformat()
+                        })
+                        self.chat_history.append({
+                            "role": "assistant",
+                            "content": analysis_text,
+                            "timestamp": datetime.now().isoformat()
+                        })
+                    else:
+                        raise Exception("No valid response from the vision model")
+
                 except Exception as e:
+                    print(f"Error in image analysis: {str(e)}")
                     if websocket and websocket.client_state != WebSocketState.DISCONNECTED:
                         await websocket.send_json({"error": str(e)})
                     return
             else:
                 try:
-                    model = self.models[self.current_text_model]
-                    if not model:
-                        if websocket and websocket.client_state != WebSocketState.DISCONNECTED:
-                            await websocket.send_json({
-                                "error": f"Text model {self.current_text_model} is not available"
-                            })
-                        return
+                    # Get the model name from the current chat
+                    model_name = self.current_text_model
+                    url = f'https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent'
+                    headers = {
+                        'Content-Type': 'application/json'
+                    }
                     
                     # If we have PDF context, include it in the prompt
                     if self.pdf_context:
@@ -130,9 +294,32 @@ class ChatService:
                     else:
                         prompt = message
                     
+                    data = {
+                        'contents': [{
+                            'parts': [{
+                                'text': prompt
+                            }]
+                        }]
+                    }
+                    
                     # Get streaming response
-                    response = model.generate_content(prompt, stream=True)
-                
+                    response = requests.post(
+                        f'{url}?key={self.api_key}',
+                        headers=headers,
+                        json=data,
+                        stream=True
+                    )
+                    
+                    if not response.ok:
+                        error_msg = f"API request failed with status {response.status_code}"
+                        try:
+                            error_data = response.json()
+                            if 'error' in error_data:
+                                error_msg = f"{error_msg}: {error_data['error'].get('message', '')}"
+                        except:
+                            pass
+                        raise Exception(error_msg)
+                    
                 except Exception as e:
                     if websocket and websocket.client_state != WebSocketState.DISCONNECTED:
                         await websocket.send_json({"error": str(e)})
@@ -140,17 +327,27 @@ class ChatService:
 
             # Stream chunks with small delay and typing sound
             full_response = ""
-            async for chunk in response:
-                if not chunk.text:
-                    continue
-                    
-                full_response += chunk.text
+            try:
+                for line in response.iter_lines():
+                    if line:
+                        try:
+                            json_response = json.loads(line.decode('utf-8').replace('data: ', ''))
+                            if 'candidates' in json_response:
+                                chunk_text = json_response['candidates'][0]['content']['parts'][0]['text']
+                                full_response += chunk_text
+                                if websocket and websocket.client_state != WebSocketState.DISCONNECTED:
+                                    await websocket.send_json({
+                                        "chunk": chunk_text,
+                                        "done": False
+                                    })
+                                await asyncio.sleep(0.05)  # Small delay for typing effect
+                        except json.JSONDecodeError:
+                            continue
+            except Exception as e:
+                print(f"Error processing stream: {e}")
                 if websocket and websocket.client_state != WebSocketState.DISCONNECTED:
-                    await websocket.send_json({
-                        "chunk": chunk.text,
-                        "done": False
-                    })
-                await asyncio.sleep(0.05)  # Small delay for typing effect
+                    await websocket.send_json({"error": str(e)})
+                return
 
             # Store in chat history
             self.chat_history.append({

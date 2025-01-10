@@ -1,0 +1,1 @@
+challenging environment that all observations in our training data {T 𝑗 } 𝑁 𝑗 = 1 are unlabeled, i.e., unsupervised training. When training our model and computing the anomaly measurement, our prediction granularity is a window x 𝑡 -𝜔 : 𝑡 = { x 𝑡 -𝜔 , · · · , x 𝑡 } . In other words, our task is to detect whether each window has anomalies or not.

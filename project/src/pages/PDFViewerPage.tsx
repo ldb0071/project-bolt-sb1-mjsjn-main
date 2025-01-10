@@ -44,6 +44,18 @@ const PDF_LOADING_OPTIONS = {
   useWorkerFetch: true
 };
 
+interface ChatTemplateProps {
+  messages?: Array<{ role: 'user' | 'assistant'; content: string }>;
+  onSend: (message: string) => void;
+  isLoading?: boolean;
+  placeholder?: string;
+  onFullScreenChange?: (isFullScreen: boolean) => void;
+  selectedText?: string;
+  pdfContent?: string;
+  isAnalyzing?: boolean;
+  onTemplateSelect?: (template: string) => void;
+}
+
 export function PDFViewerPage() {
   const { projectId } = useParams();
   const navigate = useNavigate();
@@ -357,7 +369,15 @@ export function PDFViewerPage() {
 
   const handleDelete = async (fileId: string) => {
     try {
-      await deletePDF(fileId);
+      if (!currentProject) {
+        throw new Error('Current project not found');
+      }
+      const file = currentProject.files.find(f => f.id === fileId);
+      if (!file) {
+        throw new Error('File not found');
+      }
+      const fileType = file.path.includes('/uploaded/') ? 'uploaded' : 'downloaded';
+      await deletePDF(currentProject.name, fileType, fileId);
       removeFileFromProject(currentProject.id, fileId);
       
       // Ensure we update hasPDFUploaded state correctly

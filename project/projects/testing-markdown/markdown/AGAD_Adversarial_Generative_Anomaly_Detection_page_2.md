@@ -1,0 +1,31 @@
+Page 2
+
+As surveys Pang et al. (2021); Rani and E (2020) indicated, semi-supervised anomaly detection methods dominated in this research field. Recently, with the introduction of GANs Goodfellow et al. (2014), many researches attempted to bring GANs into anomaly detection. Earlier works like AnoGAN Schlegl, Seeböck, Waldstein, SchmidtErfurth and Langs (2017a) learns the normal data distributions with GANs and attempts to reconstruct the most similar images by optimizing a latent noise vector iteratively. With the success of Adversarial Auto Encoders (AAE) Makhzani, Shlens, Jaitly, Goodfellow and Frey (2016), some more recent works combined AutoEncoders and GANs together to detect anomalies. Particularly, GANomaly Akcay et al. (2019a) further regularized the latent spaces between inputs and reconstructed images, then some following works improved it with more advanced generators like UNet Akcay et al. (2019b) and UNet++ Cheng, Liu, Gao and Chen (2020). Most of those works attempted to achieve better anomaly detection performances by learning towards the better reconstruction of normalities, disregarding the awareness of abnormalities.
+
+In contrast, supervised anomaly detection methods take both normal and abnormal data into account. Notably, supervised anomaly detection was mostly formulated as an imbalanced classification problem that addressed with different classification approaches Agrawal and Agrawal (2015) or sampling strategies Mishra (2017); Gonzalez, Dasgupta and Kozma (2002). However, supervised anomaly detection is normally in course of little labelled or noisy labelled data with limited supervisions. In such sense, Deep SAD Ruff, Vandermeulen, Görnitz, Binder, Müller, Müller and Kloft (2020), a general method based on Deep SVDDRuffet al. (2018), proposed a two-stage training with information-theoretic framework. TLSAD Feng, Tang, Dou and Wu (2021) further consolidated the model's discriminative power with a transfer learning framework, which relied on an additional large-scale reference dataset for the model training. Recent advances Razakarivony and Jurie
+
+(2014); Lübbering, Ramamurthy, Gebauer, Bell, Sifa and Bauckhage (2020); Yamanaka, Iwata, Takahashi, Yamada and Kanai (2019) took the advantage of reconstructionbased anomaly detection framework and proposed different methods to address the unbalanced classification problem by minimizing the reconstruction error for normal data, and to maximizing it for anomalies. ESAD Huang, Ye, Zhang, Wang and Tian (2021) considers both ideas of information-theoretic framework and reconstruction-based anomaly detection framework to optimize mutual information and entropy. Due to the limited availability of anomaly samples, a major challenge of supervised anomaly detection is to improve the data-efficiency of learning algorithms.
+
+With the successes of supervised deep learning models, more researches Dosovitskiy, Springenberg, Riedmiller and Brox (2014); Wen, Zhang, Li and Qiao (2016) explored the methods of reducing the needs of labelled samples, as known as discriminative feature learning. Learning discriminative features has also proven to be effective in anomaly detection field, GeoTrans Golan and El-Yaniv (2018) leveraged geometric transformations to learn discriminative features. ARNet Ye et al. (2022) attempted to use embedding-guided feature restoration to learn more semantic anomaly features. Recently, self-supervised representation learning is getting more attention since it learns domain-specific discriminative features for downstream tasks without any labelling efforts. Specifically, contrastive learning methods Chen et al. (2020a,b); He et al. (2019); Chen et al. (2020c); Grill et al. (2020); Chen and He (2021); Caron et al. (2020) has proven to be one of the most promising approaches in unsupervised representation learning. With the recent works of the integration Tack, Mo, Jeong and Shin (2020); Cho, Seol and goo Lee (2021) of contrastive learning and anomaly detection tasks, we tended to further combine it with GANs to explore discriminative anomaly features unsupervisedly.
+
+## 3. Proposed Method: AGAD
+
+This section will elaborate the main methodology of our proposed AGAD method. We firstly presented an overview of the problem and our solution, then provided a detailed introduction of the training objectives, along with the training algorithm. Lastly, we compared our method with other relative algorithms.
+
+## 3.1. Method Overview
+
+Whilst training with normality data  𝑛 , the aforementioned routine process learns to reconstruct  𝑛 to ̂  𝑛 with
+
+Given an anomaly detection dataset  with normality  𝑛 and abnormality  𝑎 , whereas  𝑛 = { 𝑥 𝑛 ∶ 𝑥 𝑛 ∼ 𝑝 𝑛 ( 𝑥 )} and  𝑎 = { 𝑥 𝑎 ∶ 𝑥 𝑎 ∼ 𝑝 𝑎 ( 𝑥 )} . To distinguish  𝑛 and  𝑎 , we utilized a GAN-like structure with a generator 𝐺 to reconstruct image data  into reconstructed data space ̂  , and a discriminator 𝐷 is used to distinguish between data domains of  and ̂  . Generally, 𝐺 tends to generate realistic ̂  that is indistinguishable to  to fool 𝐷 . Notably, 𝐷 also acts as a feature extractor to compress image data  into latent spaces  , denoted as 𝐷  .
+
+Figure 1: The proposed AGAD architecture. (a) training pipeline for normal data: that brings anomaly-awareness by minimizing the contextual loss 𝐿 𝑐𝑜𝑛 and maximize the contextual adversarial loss 𝐿 𝑎𝑑𝑐𝑜𝑛 . (b) training pipeline for abnormal data: learns to fail the reconstruction of anomaly directly.
+
+<!-- image -->
+
+minimum differences. Next, anomaly-awareness is achieved by the contextual adversarial information . Specifically, we assume the reconstructed ̂  as pseudo-anomaly and expect the reconstruction of ̂  will be failed. Mathematically, given a distance function  𝑑𝑖𝑠𝑡 , we expect to learn a suite of parameter 𝜃 𝐺 and 𝜃 𝐷 that can achieve:
+
+min  𝑑𝑖𝑠𝑡 (  𝑛 , ̂  𝑛 ; 𝜃 𝐺 ) ∧ max  𝑑𝑖𝑠𝑡 ( ̂  𝑛 , 𝐺 ( ̂  𝑛 ); 𝜃 𝐺 ) , (1)
+
+min 𝐺 max 𝐷 [log 𝐷 (  𝑛 ; 𝜃 𝐷 )+log (1 𝐷 ( 𝐺 (  𝑛 ; 𝜃 𝐺 ); 𝜃 𝐷 )] . (2)
+
+Whenabnormaldata  𝑎 available, the generator 𝐺 learns to fail the reconstruction directly and the discriminator 𝐷 can distinguish it from the normal:

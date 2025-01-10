@@ -1,0 +1,1 @@
+In this paper, we used the area under the curve (AUC) of F1 PA%K as the main evaluation metric obtained by increasing 𝐾 from 0 to 1 by 0.1. Here, F1 PA%K with 𝐾 = 0 and 𝐾 = 1 is identical with the F1 PA and F1, respectively. Figure 4 shows that F1 PA%K values with di/fferent 𝐾 and AUCs of the proposed model and some baselines on benchmark datasets.

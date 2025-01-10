@@ -1,0 +1,1 @@
+where 𝜆 ( 𝑙 ) > 0 is a weighting function and 𝑝 ( x 𝑙 | x 0 ) denotes a transition kernel. Note that the transition kernel is a Gaussian distribution when the drift coe/fficient f (· , 𝑙 ) is a/ffine as in [32].

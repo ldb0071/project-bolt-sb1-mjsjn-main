@@ -17,6 +17,10 @@ interface Props {
 const sourceOptions = ['All', 'CVPR', 'ICCV', 'WACV', 'ECCV'];
 const resultCountOptions = [10, 20, 50, 100, 200, 500, 1000];
 
+interface CitationResponse {
+  [paperId: string]: number | null;
+}
+
 export function ArxivSearchModal({ isOpen, onClose, onDownload }: Props) {
   const [query, setQuery] = useState('');
   const [source, setSource] = useState('All');
@@ -39,7 +43,7 @@ export function ArxivSearchModal({ isOpen, onClose, onDownload }: Props) {
     const pollCitations = async () => {
       if (papers.length > 0 && papers.some(p => p.citations === null) && includeCitations) {
         try {
-          const response = await axios.get('/api/arxiv/citations', {
+          const response = await axios.get<CitationResponse>('/api/arxiv/citations', {
             params: { paperIds: papers.filter(p => p.citations === null).map(p => p.id) }
           });
 

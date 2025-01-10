@@ -1,13 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, Maximize2, Minimize2, AlertCircle, Settings, Trash2, Plus, MessageSquare } from 'lucide-react';
+import { Send, Bot, User, Maximize2, Minimize2, AlertCircle, Settings, Trash2, Plus, MessageSquare, Cpu, Image as ImageIcon, X } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { StreamingText } from '../components/StreamingText';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
-import { ChatMessage, sendChatMessage, AssistantRole, ROLE_CONFIGS } from '../services/chatService';
+import { ChatMessage, sendChatMessage, AssistantRole, ROLE_CONFIGS, ModelId, AVAILABLE_MODELS } from '../services/chatService';
 import { toast } from 'react-hot-toast';
 import { ComparisonTable } from '../components/ComparisonTable';
 import { PaperDownloadCards } from '../components/PaperDownloadCards';
+import { useNavigate } from 'react-router-dom';
 
 interface ChatPageProps {
   onFullScreenChange?: (isFullScreen: boolean) => void;
@@ -18,6 +19,7 @@ interface Chat {
   name: string;
   messages: ChatMessage[];
   role: AssistantRole;
+  model: ModelId;
   createdAt: string;
 }
 
@@ -26,7 +28,21 @@ interface CompletedMessage {
   isComplete: boolean;
 }
 
+const BUILT_IN_ROLES = [
+  'default',
+  'developer',
+  'researcher',
+  'analyst',
+  'medical',
+  'administrator'
+] as const;
+
 export function ChatPage({ onFullScreenChange }: ChatPageProps) {
+  const {
+    customRoles,
+    modifiedBuiltInRoles,
+    getBuiltInRoleConfig,
+  } = useStore();
   const [chats, setChats] = useState<Chat[]>(() => {
     const savedChats = localStorage.getItem('chats');
     return savedChats ? JSON.parse(savedChats) : [{
@@ -34,6 +50,7 @@ export function ChatPage({ onFullScreenChange }: ChatPageProps) {
       name: 'New Chat',
       messages: [],
       role: 'default',
+      model: 'gemini-1.5-flash',
       createdAt: new Date().toISOString()
     }];
   });
@@ -47,12 +64,37 @@ export function ChatPage({ onFullScreenChange }: ChatPageProps) {
   const [error, setError] = useState<string | null>(null);
   const [currentRole, setCurrentRole] = useState<AssistantRole>('default');
   const [showRoleSelector, setShowRoleSelector] = useState(false);
+  const [showModelSelector, setShowModelSelector] = useState(false);
+  const [currentModel, setCurrentModel] = useState<ModelId>('gemini-1.5-flash');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const geminiKey = useStore((state) => state.geminiKey);
+  const githubToken = useStore((state) => state.githubToken);
   const [completedMessages, setCompletedMessages] = useState<Record<string, boolean>>(() => {
     const saved = localStorage.getItem('completedMessages');
     return saved ? JSON.parse(saved) : {};
   });
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const navigate = useNavigate();
+
+  // Get all available roles (built-in + custom)
+  const availableRoles = React.useMemo(() => {
+    // Get built-in roles, filtering out disabled ones
+    const builtInRoles = BUILT_IN_ROLES.map(role => ({
+      id: role,
+      config: modifiedBuiltInRoles.find(r => r.originalRole === role)?.config || ROLE_CONFIGS[role],
+      isBuiltIn: true
+    })).filter(role => !role.config.isDisabled);
+
+    // Get custom roles
+    const customRolesList = customRoles.map(role => ({
+      id: role.id,
+      config: role.config,
+      isBuiltIn: false
+    }));
+
+    return [...builtInRoles, ...customRolesList];
+  }, [customRoles, modifiedBuiltInRoles]);
 
   const markdownComponents = {
     h1: (props: any) => (
@@ -139,16 +181,26 @@ export function ChatPage({ onFullScreenChange }: ChatPageProps) {
   const messages = currentChat?.messages || [];
 
   const createNewChat = () => {
+    const defaultName = 'New Chat';
     const newChat: Chat = {
       id: crypto.randomUUID(),
-      name: 'New Chat',
+      name: defaultName,
       messages: [],
       role: currentRole,
+      model: currentModel,
       createdAt: new Date().toISOString()
     };
     setChats(prev => [...prev, newChat]);
     setCurrentChatId(newChat.id);
     setShowChatList(false);
+
+    // Prompt for chat name
+    setTimeout(() => {
+      const chatName = prompt('Enter a name for this chat:', defaultName);
+      if (chatName && chatName.trim() !== '') {
+        updateChatName(newChat.id, chatName.trim());
+      }
+    }, 100);
   };
 
   const deleteChat = (chatId: string) => {
@@ -162,6 +214,7 @@ export function ChatPage({ onFullScreenChange }: ChatPageProps) {
           name: 'New Chat',
           messages: [],
           role: currentRole,
+          model: currentModel,
           createdAt: new Date().toISOString()
         };
         return [newChat];
@@ -204,11 +257,38 @@ export function ChatPage({ onFullScreenChange }: ChatPageProps) {
     }));
   };
 
+  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) { // 5MB limit
+        toast.error('Image size should be less than 5MB');
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setSelectedImage(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const removeSelectedImage = () => {
+    setSelectedImage(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim()) return;
+    if (!input.trim() && !selectedImage) return;
     
-    if (!geminiKey) {
+    const modelConfig = AVAILABLE_MODELS[currentModel];
+    if (modelConfig.type === 'azure' && !githubToken) {
+      toast.error('Please add your GitHub token in settings first');
+      return;
+    } else if (modelConfig.type === 'gemini' && !geminiKey) {
       toast.error('Please add your Gemini API key in settings first');
       return;
     }
@@ -219,6 +299,7 @@ export function ChatPage({ onFullScreenChange }: ChatPageProps) {
       id: messageId,
       role: 'user', 
       content: input,
+      image: selectedImage || undefined,
       timestamp: new Date().toISOString()
     };
 
@@ -228,10 +309,17 @@ export function ChatPage({ onFullScreenChange }: ChatPageProps) {
         : chat
     ));
     setInput('');
+    setSelectedImage(null);
     setIsLoading(true);
 
     try {
-      const response = await sendChatMessage([...messages, newMessage], geminiKey, currentRole);
+      const response = await sendChatMessage(
+        [...messages, newMessage], 
+        geminiKey, 
+        currentRole,
+        currentModel,
+        githubToken
+      );
       const assistantMessageId = crypto.randomUUID();
       setChats(prev => prev.map(chat => 
         chat.id === currentChatId 
@@ -264,7 +352,28 @@ export function ChatPage({ onFullScreenChange }: ChatPageProps) {
         ? { ...chat, messages: [] }
         : chat
     ));
-    toast.success(`Switched to ${ROLE_CONFIGS[role].title} mode`);
+
+    // Get the role title from either built-in or custom roles
+    let roleTitle: string;
+    if (role.startsWith('custom_')) {
+      const customRole = customRoles.find(r => r.id === role.replace('custom_', ''));
+      roleTitle = customRole?.config.title || 'Custom Role';
+    } else {
+      roleTitle = ROLE_CONFIGS[role]?.title || role;
+    }
+    
+    toast.success(`Switched to ${roleTitle} mode`);
+  };
+
+  const handleModelChange = (model: ModelId) => {
+    setCurrentModel(model);
+    setShowModelSelector(false);
+    setChats(prev => prev.map(chat => 
+      chat.id === currentChatId 
+        ? { ...chat, messages: [], model } 
+        : chat
+    ));
+    toast.success(`Switched to ${AVAILABLE_MODELS[model]}`);
   };
 
   const toggleFullScreen = () => {
@@ -298,13 +407,12 @@ export function ChatPage({ onFullScreenChange }: ChatPageProps) {
 
   const parseComparisonTable = (content: string): { data: any[] } | null => {
     try {
-      const tableMatch = content.match(/\|([^\n]+)\|([^\n]+)\|([^\n]+)\|([^\n]+)\|/g);
+      const tableMatch = content.match(/^(?:\|[^\n]+\|)+\n(?:\|[-]+\|)+\n(?:(?:\|[^\n]+\|)+\n)+/m);
       if (!tableMatch) return null;
 
-      const rows = tableMatch.map(row => 
-        row.split('|')
-          .filter(cell => cell.trim())
-          .map(cell => cell.trim())
+      const tableString = tableMatch[0];
+      const rows = tableString.trim().split('\n').map(row =>
+        row.split('|').filter(cell => cell.trim()).map(cell => cell.trim())
       );
 
       // Skip header and separator rows
@@ -351,6 +459,79 @@ export function ChatPage({ onFullScreenChange }: ChatPageProps) {
       </ReactMarkdown>
     );
   };
+
+  const renderMessage = (message: ChatMessage, messageIndex: number) => (
+    <motion.div
+      key={message.id}
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      className={`flex items-start gap-4 group ${
+        message.role === 'assistant' 
+          ? 'bg-gray-50 dark:bg-navy-800 rounded-lg p-6' 
+          : 'px-2'
+      }`}
+    >
+      {message.role === 'assistant' ? (
+        <div className="w-8 h-8 rounded-full bg-primary-100 dark:bg-primary-900 flex items-center justify-center flex-shrink-0">
+          <Bot className="h-5 w-5 text-primary-600 dark:text-primary-400" />
+        </div>
+      ) : (
+        <div className="w-8 h-8 rounded-full bg-primary-600 flex items-center justify-center flex-shrink-0">
+          <User className="h-5 w-5 text-white" />
+        </div>
+      )}
+      <div className="flex-1">
+        <div className="flex items-center justify-between gap-2 mb-1">
+          <div className="flex items-center gap-2">
+            <span className="font-medium text-sm text-gray-600 dark:text-gray-300">
+              {message.role === 'assistant' ? 'AI Assistant' : 'You'}
+            </span>
+            {message.timestamp && (
+              <span className="text-xs text-gray-400">
+                {new Date(message.timestamp).toLocaleTimeString()}
+              </span>
+            )}
+          </div>
+          <button
+            onClick={() => deleteMessage(messageIndex)}
+            className="opacity-0 group-hover:opacity-100 p-1 rounded-lg text-gray-400 
+              hover:text-red-400 hover:bg-red-500/10 transition-all duration-200"
+            title="Delete message"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="prose prose-sm md:prose-base dark:prose-invert max-w-none overflow-x-auto">
+          {message.image && (
+            <div className="mb-4">
+              <img 
+                src={message.image} 
+                alt="Uploaded content"
+                className="max-w-full rounded-lg shadow-md"
+                style={{ maxHeight: '400px' }}
+              />
+            </div>
+          )}
+          {message.role === 'assistant' ? (
+            <>
+              {message.id === messages[messages.length - 1]?.id && isLoading ? (
+                <StreamingText onComplete={() => handleMessageComplete(message.id)}>
+                  {renderMessageContent(message.content)}
+                </StreamingText>
+              ) : (
+                renderMessageContent(message.content)
+              )}
+              {message.arxivPapers && message.arxivPapers.length > 0 && (
+                <PaperDownloadCards papers={message.arxivPapers} />
+              )}
+            </>
+          ) : (
+            <ReactMarkdown>{message.content}</ReactMarkdown>
+          )}
+        </div>
+      </div>
+    </motion.div>
+  );
 
   return (
     <div className={`relative flex flex-col ${
@@ -427,12 +608,19 @@ export function ChatPage({ onFullScreenChange }: ChatPageProps) {
             <div>
               <h1 className="text-lg font-semibold text-gray-900 dark:text-white">AI Assistant</h1>
               <p className="text-sm text-gray-500 dark:text-gray-400">
-                {ROLE_CONFIGS[currentRole].title}
+                {ROLE_CONFIGS[currentRole]?.title || 'Assistant'}
               </p>
             </div>
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowModelSelector(!showModelSelector)}
+            className="p-2 hover:bg-gray-100 dark:hover:bg-navy-800 rounded-lg transition-colors"
+            title="Change Model"
+          >
+            <Cpu className="h-5 w-5 text-gray-500" />
+          </button>
           <button
             onClick={() => setShowRoleSelector(!showRoleSelector)}
             className="p-2 hover:bg-gray-100 dark:hover:bg-navy-800 rounded-lg transition-colors"
@@ -461,6 +649,34 @@ export function ChatPage({ onFullScreenChange }: ChatPageProps) {
         </div>
       </div>
 
+      {/* Model Selector Dropdown */}
+      <AnimatePresence>
+        {showModelSelector && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="absolute top-16 right-4 w-72 bg-white dark:bg-navy-800 rounded-lg shadow-lg z-50 border border-gray-200 dark:border-navy-700"
+          >
+            {Object.entries(AVAILABLE_MODELS).map(([modelId, config]) => (
+              <button
+                key={modelId}
+                onClick={() => handleModelChange(modelId as ModelId)}
+                className={`w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-navy-700 transition-colors
+                  ${currentModel === modelId ? 'bg-gray-50 dark:bg-navy-700' : ''}`}
+              >
+                <div className="font-medium text-gray-900 dark:text-white">
+                  {config.name}
+                </div>
+                <div className="text-sm text-gray-500 dark:text-gray-400">
+                  {config.type === 'azure' ? 'Azure OpenAI' : 'Google Gemini'}
+                </div>
+              </button>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Role Selector Dropdown */}
       <AnimatePresence>
         {showRoleSelector && (
@@ -468,23 +684,95 @@ export function ChatPage({ onFullScreenChange }: ChatPageProps) {
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="absolute top-16 right-4 w-64 bg-white dark:bg-navy-800 rounded-lg shadow-lg z-50 border border-gray-200 dark:border-navy-700"
+            className="absolute top-16 right-4 w-80 bg-white dark:bg-navy-800 rounded-lg shadow-lg z-50 border border-gray-200 dark:border-navy-700 p-2"
           >
-            {Object.entries(ROLE_CONFIGS).map(([role, config]) => (
-              <button
-                key={role}
-                onClick={() => handleRoleChange(role as AssistantRole)}
-                className={`w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-navy-700 transition-colors
-                  ${currentRole === role ? 'bg-gray-50 dark:bg-navy-700' : ''}`}
-              >
-                <div className="font-medium text-gray-900 dark:text-white">
-                  {config.title}
+            <div className="space-y-2">
+              <div className="px-2 py-1">
+                <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">Select Assistant Role</h3>
+              </div>
+              
+              {/* Built-in Roles */}
+              <div className="space-y-1">
+                <div className="px-2 py-1">
+                  <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400">Built-in Roles</h4>
                 </div>
-                <div className="text-sm text-gray-500 dark:text-gray-400">
-                  {config.description}
+                {availableRoles
+                  .filter(role => role.isBuiltIn)
+                  .map(role => (
+                    <button
+                      key={role.id}
+                      onClick={() => handleRoleChange(role.id as AssistantRole)}
+                      className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
+                        currentRole === role.id 
+                          ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400'
+                          : 'hover:bg-gray-50 dark:hover:bg-navy-700 text-gray-700 dark:text-gray-300'
+                      }`}
+                    >
+                      <Bot className={`h-5 w-5 ${
+                        currentRole === role.id
+                          ? 'text-primary-500'
+                          : 'text-gray-400'
+                      }`} />
+                      <div className="text-left">
+                        <div className="font-medium">{role.config?.title || 'Custom Role'}</div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400 line-clamp-1">
+                          {role.config?.description || 'No description available'}
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+              </div>
+
+              {/* Custom Roles */}
+              {customRoles.length > 0 && (
+                <div className="space-y-1 pt-2 border-t border-gray-200 dark:border-navy-700">
+                  <div className="px-2 py-1">
+                    <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400">Custom Roles</h4>
+                  </div>
+                  {availableRoles
+                    .filter(role => !role.isBuiltIn)
+                    .map(role => (
+                      <button
+                        key={role.id}
+                        onClick={() => handleRoleChange(`custom_${role.id}` as AssistantRole)}
+                        className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
+                          currentRole === `custom_${role.id}`
+                            ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400'
+                            : 'hover:bg-gray-50 dark:hover:bg-navy-700 text-gray-700 dark:text-gray-300'
+                        }`}
+                      >
+                        <Bot className={`h-5 w-5 ${
+                          currentRole === `custom_${role.id}`
+                            ? 'text-primary-500'
+                            : 'text-gray-400'
+                        }`} />
+                        <div className="text-left">
+                          <div className="font-medium">{role.config?.title || 'Custom Role'}</div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400 line-clamp-1">
+                            {role.config?.description || 'No description available'}
+                          </div>
+                        </div>
+                      </button>
+                    ))}
                 </div>
-              </button>
-            ))}
+              )}
+
+              {/* Create Custom Role Button */}
+              <div className="pt-2 border-t border-gray-200 dark:border-navy-700">
+                <button
+                  onClick={() => {
+                    setShowRoleSelector(false);
+                    navigate('/settings');
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-primary-600 
+                    hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 hover:bg-gray-50 
+                    dark:hover:bg-navy-700 rounded-lg transition-colors"
+                >
+                  <Plus className="h-4 w-4" />
+                  Create Custom Role
+                </button>
+              </div>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -503,9 +791,9 @@ export function ChatPage({ onFullScreenChange }: ChatPageProps) {
               >
                 <div className="text-center">
                   <Bot className="h-12 w-12 mx-auto mb-4 text-primary-500" />
-                  <p>Start a conversation with the {ROLE_CONFIGS[currentRole].title}</p>
+                  <p>Start a conversation with the {ROLE_CONFIGS[currentRole]?.title || 'Assistant'}</p>
                   <p className="mt-2 text-sm text-gray-400 max-w-md">
-                    {ROLE_CONFIGS[currentRole].description}
+                    {ROLE_CONFIGS[currentRole]?.description || 'No description available'}
                   </p>
                   {!geminiKey && (
                     <p className="mt-2 text-sm text-red-500 flex items-center justify-center gap-2">
@@ -516,68 +804,7 @@ export function ChatPage({ onFullScreenChange }: ChatPageProps) {
                 </div>
               </motion.div>
             ) : (
-              messages.map((message, messageIndex) => (
-                <motion.div
-                  key={message.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className={`flex items-start gap-4 group ${
-                    message.role === 'assistant' 
-                      ? 'bg-gray-50 dark:bg-navy-800 rounded-lg p-6' 
-                      : 'px-2'
-                  }`}
-                >
-                  {message.role === 'assistant' ? (
-                    <div className="w-8 h-8 rounded-full bg-primary-100 dark:bg-primary-900 flex items-center justify-center flex-shrink-0">
-                      <Bot className="h-5 w-5 text-primary-600 dark:text-primary-400" />
-                    </div>
-                  ) : (
-                    <div className="w-8 h-8 rounded-full bg-primary-600 flex items-center justify-center flex-shrink-0">
-                      <User className="h-5 w-5 text-white" />
-                    </div>
-                  )}
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between gap-2 mb-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-sm text-gray-600 dark:text-gray-300">
-                          {message.role === 'assistant' ? 'AI Assistant' : 'You'}
-                        </span>
-                        {message.timestamp && (
-                          <span className="text-xs text-gray-400">
-                            {new Date(message.timestamp).toLocaleTimeString()}
-                          </span>
-                        )}
-                      </div>
-                      <button
-                        onClick={() => deleteMessage(messageIndex)}
-                        className="opacity-0 group-hover:opacity-100 p-1 rounded-lg text-gray-400 
-                          hover:text-red-400 hover:bg-red-500/10 transition-all duration-200"
-                        title="Delete message"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                    <div className="prose prose-sm md:prose-base dark:prose-invert max-w-none overflow-x-auto">
-                      {message.role === 'assistant' ? (
-                        <>
-                          {message.id === messages[messages.length - 1]?.id && isLoading ? (
-                            <StreamingText onComplete={() => handleMessageComplete(message.id)}>
-                              {renderMessageContent(message.content)}
-                            </StreamingText>
-                          ) : (
-                            renderMessageContent(message.content)
-                          )}
-                          {message.arxivPapers && message.arxivPapers.length > 0 && (
-                            <PaperDownloadCards papers={message.arxivPapers} />
-                          )}
-                        </>
-                      ) : (
-                        <ReactMarkdown>{message.content}</ReactMarkdown>
-                      )}
-                    </div>
-                  </div>
-                </motion.div>
-              ))
+              messages.map((message, messageIndex) => renderMessage(message, messageIndex))
             )}
             {error && (
               <motion.div
@@ -598,6 +825,21 @@ export function ChatPage({ onFullScreenChange }: ChatPageProps) {
       <div className={`border-t border-gray-200 dark:border-navy-700 bg-white dark:bg-navy-900 
         ${isFullScreen ? 'sticky bottom-0 z-10 w-full' : ''}`}>
         <div className={`p-4 ${isFullScreen ? 'max-w-4xl mx-auto' : ''}`}>
+          {selectedImage && (
+            <div className="mb-4 relative">
+              <img 
+                src={selectedImage} 
+                alt="Selected" 
+                className="max-h-[200px] rounded-lg shadow-sm"
+              />
+              <button
+                onClick={removeSelectedImage}
+                className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          )}
           <form onSubmit={handleSubmit}>
             <div className="relative flex items-center">
               <input
@@ -606,22 +848,42 @@ export function ChatPage({ onFullScreenChange }: ChatPageProps) {
                 onChange={(e) => setInput(e.target.value)}
                 placeholder={
                   geminiKey
-                    ? `Ask the ${ROLE_CONFIGS[currentRole].title.toLowerCase()}...`
+                    ? `Ask the ${ROLE_CONFIGS[currentRole]?.title.toLowerCase()}...`
                     : 'Please add your Gemini API key in settings first'
                 }
                 disabled={!geminiKey || isLoading}
-                className="flex-1 p-4 pr-12 rounded-lg border border-gray-300 dark:border-navy-600 bg-white dark:bg-navy-800 
+                className="flex-1 p-4 pr-24 rounded-lg border border-gray-300 dark:border-navy-600 bg-white dark:bg-navy-800 
                   focus:outline-none focus:ring-2 focus:ring-primary-500 dark:focus:ring-primary-400
                   disabled:bg-gray-100 dark:disabled:bg-navy-700 text-gray-900 dark:text-white"
               />
-              <button
-                type="submit"
-                disabled={!geminiKey || !input.trim() || isLoading}
-                className="absolute right-2 p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300
-                  disabled:text-gray-300 dark:disabled:text-gray-600"
-              >
-                <Send className="h-5 w-5" />
-              </button>
+              <div className="absolute right-2 flex items-center gap-2">
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageUpload}
+                  ref={fileInputRef}
+                  className="hidden"
+                  disabled={!geminiKey || isLoading}
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={!geminiKey || isLoading}
+                  className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300
+                    disabled:text-gray-300 dark:disabled:text-gray-600"
+                  title="Upload image"
+                >
+                  <ImageIcon className="h-5 w-5" />
+                </button>
+                <button
+                  type="submit"
+                  disabled={(!input.trim() && !selectedImage) || !geminiKey || isLoading}
+                  className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300
+                    disabled:text-gray-300 dark:disabled:text-gray-600"
+                >
+                  <Send className="h-5 w-5" />
+                </button>
+              </div>
             </div>
           </form>
         </div>

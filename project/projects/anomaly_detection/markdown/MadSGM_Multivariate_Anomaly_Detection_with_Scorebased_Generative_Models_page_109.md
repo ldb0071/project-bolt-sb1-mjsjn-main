@@ -1,0 +1,1 @@
+in previous anomaly detection work, TadGAN [10], which mainly focuses on univariate time-series. We set the anomaly threshold as a hyperparameter and consider samples with anomaly measurements above the threshold to be anomalies.

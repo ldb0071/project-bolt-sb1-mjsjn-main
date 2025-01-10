@@ -1,139 +1,231 @@
-import os
 import chromadb
 from chromadb.config import Settings
-from chromadb.utils import embedding_functions
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
+from models import DocumentChunk
 import logging
+import os
+import shutil
+import time
 
 logger = logging.getLogger(__name__)
 
-class VectorStore:
-    def __init__(self, persist_directory: str = "chroma_db"):
-        """Initialize the vector store with ChromaDB"""
+class ChromaStore:
+    def __init__(self, persist_directory: str, embedding_function: Any):
         self.persist_directory = persist_directory
+        self.embedding_function = embedding_function
         
-        # Create persist directory if it doesn't exist
+        # Ensure directory exists
         os.makedirs(persist_directory, exist_ok=True)
         
-        # Initialize ChromaDB client
-        self.client = chromadb.PersistentClient(
-            path=persist_directory,
-            settings=Settings(
-                anonymized_telemetry=False,
-                allow_reset=True
-            )
-        )
-        
-        # Use sentence-transformers for embeddings
-        self.embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(
-            model_name="all-MiniLM-L6-v2"
-        )
-        
-        # Initialize collections
-        self.papers_collection = self.client.get_or_create_collection(
-            name="research_papers",
-            embedding_function=self.embedding_function,
-            metadata={"description": "Research papers from various sources"}
-        )
-
-    def add_papers(self, papers: List[Dict[str, Any]]) -> None:
-        """Add papers to the vector store"""
         try:
-            # Prepare data for ChromaDB
-            documents = []  # Text content for embedding
-            metadatas = []  # Additional metadata
-            ids = []        # Unique IDs
+            # Initialize ChromaDB client with older version settings
+            self.client = chromadb.PersistentClient(
+                path=persist_directory,
+                settings=Settings(
+                    anonymized_telemetry=False,
+                    is_persistent=True
+                )
+            )
             
-            for paper in papers:
-                # Combine title and summary for better semantic search
-                content = f"{paper['title']} {paper.get('summary', '')}"
-                documents.append(content)
-                
-                # Prepare metadata
-                metadata = {
-                    "title": paper["title"],
-                    "authors": ", ".join(paper["authors"]) if isinstance(paper.get("authors"), list) else paper.get("authors", ""),
-                    "published": paper.get("published", ""),
-                    "source": paper.get("source", "unknown"),
-                    "pdf_url": paper.get("pdfUrl", "")
-                }
-                metadatas.append(metadata)
-                
-                # Use paper ID or generate one
-                paper_id = str(paper.get("id", hash(paper["title"])))
-                ids.append(paper_id)
-            
-            # Add to collection in batches
-            batch_size = 100
-            for i in range(0, len(documents), batch_size):
-                end_idx = min(i + batch_size, len(documents))
-                self.papers_collection.add(
-                    documents=documents[i:end_idx],
-                    metadatas=metadatas[i:end_idx],
-                    ids=ids[i:end_idx]
+            # Test if database is accessible
+            try:
+                self.client.list_collections()
+            except Exception as e:
+                logger.warning(f"Database access error: {e}")
+                # If there's an error, try to recreate the client
+                self.client = chromadb.PersistentClient(
+                    path=persist_directory,
+                    settings=Settings(
+                        anonymized_telemetry=False,
+                        is_persistent=True
+                    )
                 )
                 
-            logger.info(f"Successfully added {len(documents)} papers to vector store")
-            
         except Exception as e:
-            logger.error(f"Error adding papers to vector store: {str(e)}")
+            logger.error(f"Failed to initialize ChromaDB client: {e}")
             raise
 
-    def add_document(self, document_id: str, text: str, metadata: Dict[str, Any]) -> None:
-        """Add a single document to the vector store"""
+    def _delete_collection_if_exists(self, name: str) -> None:
+        """Delete a collection if it exists."""
         try:
-            # Add to collection
-            self.papers_collection.add(
-                documents=[text],
-                metadatas=[metadata],
-                ids=[document_id]
+            self.client.delete_collection(name)
+            logger.info(f"Deleted existing collection: {name}")
+        except Exception:
+            # Ignore if collection doesn't exist
+            pass
+
+    def _get_safe_collection_name(self, name: str) -> str:
+        """
+        Convert a project name into a valid ChromaDB collection name.
+        Collection names must:
+        1. Be 3-63 characters long
+        2. Start and end with alphanumeric
+        3. Contain only alphanumeric, underscore, hyphen
+        4. No consecutive periods
+        5. Not be a valid IPv4 address
+        """
+        # Replace spaces and special chars with underscore
+        safe_name = name.replace(" ", "_").replace("-", "_").lower()
+        
+        # Remove any non-alphanumeric characters except underscore
+        safe_name = ''.join(c for c in safe_name if c.isalnum() or c == '_')
+        
+        # Ensure minimum length of 3 characters
+        while len(safe_name) < 3:
+            safe_name += "_collection"
+        
+        # Truncate to maximum length if needed
+        if len(safe_name) > 63:
+            safe_name = safe_name[:63]
+        
+        # Ensure starts and ends with alphanumeric
+        if not safe_name[0].isalnum():
+            safe_name = "c" + safe_name[1:]
+        if not safe_name[-1].isalnum():
+            safe_name = safe_name[:-1] + "x"
+        
+        return safe_name
+
+    def create_collection(self, name: str):
+        """Create a new collection, deleting the old one if it exists."""
+        try:
+            safe_name = self._get_safe_collection_name(name)
+            
+            # Delete existing collection if it exists
+            self._delete_collection_if_exists(safe_name)
+            
+            # Create new collection
+            collection = self.client.create_collection(
+                name=safe_name,
+                metadata={"hnsw:space": "cosine"}
             )
-            logger.info(f"Successfully added document {document_id} to vector store")
-        except Exception as e:
-            logger.error(f"Error adding document to vector store: {str(e)}")
-            raise
-
-    def search_papers(
-        self,
-        query: str,
-        n_results: int = 10,
-        source_filter: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
-        """Search papers using semantic similarity"""
-        try:
-            # Prepare where clause for filtering
-            where = {"source": source_filter} if source_filter else None
             
-            # Query the collection
-            results = self.papers_collection.query(
-                query_texts=[query],
-                n_results=n_results,
-                where=where
-            )
-            
-            # Format results
-            papers = []
-            if results and results['metadatas']:
-                for metadata, distance in zip(results['metadatas'][0], results['distances'][0]):
-                    paper = metadata.copy()
-                    paper['similarity_score'] = 1 - distance  # Convert distance to similarity score
-                    papers.append(paper)
-            
-            return papers
+            logger.info(f"Created new collection: {safe_name}")
+            return collection
             
         except Exception as e:
-            logger.error(f"Error searching papers in vector store: {str(e)}")
+            logger.error(f"Error creating collection {name}: {e}")
             raise
 
-    def clear_collection(self) -> None:
-        """Clear all papers from the collection"""
+    def get_collection(self, name: str):
+        """Get an existing collection."""
         try:
-            self.papers_collection.delete()
-            self.papers_collection = self.client.get_or_create_collection(
-                name="research_papers",
+            safe_name = self._get_safe_collection_name(name)
+            return self.client.get_collection(
+                name=safe_name,
                 embedding_function=self.embedding_function
             )
-            logger.info("Successfully cleared papers collection")
+        except Exception:
+            return None
+
+    def add_chunks(self, collection_name: str, chunks: List[DocumentChunk]):
+        try:
+            if not chunks:
+                logger.warning("No chunks to add to collection")
+                return
+            
+            # Always create a new collection
+            collection = self.create_collection(collection_name)
+            
+            # Get embeddings for chunks
+            texts = [chunk.content for chunk in chunks]
+            embeddings = self.embedding_function.get_embeddings(texts)
+            
+            # Prepare data for addition
+            documents = [chunk.content for chunk in chunks]
+            metadatas = [chunk.metadata for chunk in chunks]
+            ids = [f"chunk_{chunk.chunk_id}" for chunk in chunks]
+            
+            # Add all chunks in a single request
+            collection.add(
+                embeddings=embeddings,
+                documents=documents,
+                metadatas=metadatas,
+                ids=ids
+            )
+            
+            logger.info(f"Added {len(chunks)} chunks to collection {collection_name}")
+            
         except Exception as e:
-            logger.error(f"Error clearing papers collection: {str(e)}")
+            logger.error(f"Error adding chunks to collection {collection_name}: {e}")
             raise
+
+    def search(self, collection_name: str, query: str, limit: int = 5):
+        try:
+            safe_name = self._get_safe_collection_name(collection_name)
+            collection = self.client.get_collection(name=safe_name)
+            
+            if not collection:
+                logger.warning(f"Collection {collection_name} not found")
+                return {"documents": [], "metadatas": [], "distances": []}
+            
+            # Get query embedding
+            query_embedding = self.embedding_function.get_embedding(query)
+            
+            results = collection.query(
+                query_embeddings=[query_embedding],
+                n_results=limit,
+                include=["documents", "metadatas", "distances"]
+            )
+            
+            return results
+            
+        except Exception as e:
+            logger.error(f"Error searching collection {collection_name}: {e}")
+            raise
+
+    def get_collection_stats(self, collection_name: str) -> Dict[str, Any]:
+        try:
+            safe_name = self._get_safe_collection_name(collection_name)
+            
+            try:
+                collection = self.client.get_collection(name=safe_name)
+            except Exception as e:
+                logger.warning(f"Error accessing collection {safe_name}: {e}")
+                return {
+                    "total_documents": 0,
+                    "sources": [],
+                    "chunks_per_source": {}
+                }
+            
+            if not collection:
+                return {
+                    "total_documents": 0,
+                    "sources": [],
+                    "chunks_per_source": {}
+                }
+            
+            try:
+                # Get all documents and metadata
+                results = collection.get(include=["metadatas"])
+                
+                stats = {
+                    "total_documents": len(results["ids"]) if results else 0,
+                    "sources": set(),
+                    "chunks_per_source": {}
+                }
+                
+                if results and results["metadatas"]:
+                    for metadata in results["metadatas"]:
+                        source = metadata.get("source", "unknown")
+                        stats["sources"].add(source)
+                        stats["chunks_per_source"][source] = stats["chunks_per_source"].get(source, 0) + 1
+                    
+                    stats["sources"] = list(stats["sources"])
+                
+                return stats
+            except Exception as inner_e:
+                logger.error(f"Error getting collection data: {inner_e}")
+                return {
+                    "total_documents": 0,
+                    "sources": [],
+                    "chunks_per_source": {}
+                }
+            
+        except Exception as e:
+            logger.error(f"Error getting stats for collection {collection_name}: {e}")
+            return {
+                "total_documents": 0,
+                "sources": [],
+                "chunks_per_source": {}
+            }

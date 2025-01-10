@@ -1,9 +1,26 @@
+/**
+ * API Client Module
+ * 
+ * This module provides a configured Axios instance for making HTTP requests to the backend.
+ * It handles:
+ * - Base URL configuration
+ * - Request/response interceptors
+ * - Error handling
+ * - File upload/download
+ * - PDF operations
+ * - Search functionality
+ * 
+ * @module apiClient
+ */
+
 import axios from 'axios';
 
 // Add API base URL configuration
 export const API_BASE = 'http://localhost:8080/api';
 
-// Create axios instance with default config
+/**
+ * Configured Axios instance with default settings and interceptors
+ */
 export const apiClient = axios.create({
   baseURL: API_BASE,
   headers: {
@@ -49,8 +66,10 @@ apiClient.interceptors.request.use(
   }
 );
 
-// Define response types
-interface ArxivPaper {
+/**
+ * Interface for ArXiv paper data
+ */
+export interface ArxivPaper {
   id: string;
   title: string;
   authors: string[];
@@ -61,12 +80,18 @@ interface ArxivPaper {
   categories: string[];
 }
 
-interface ArxivSearchResponse {
+/**
+ * Interface for ArXiv search response
+ */
+export interface ArxivSearchResponse {
   papers: ArxivPaper[];
   total_results: number;
 }
 
-interface UploadResponse {
+/**
+ * Interface for file upload response
+ */
+export interface UploadResponse {
   filename: string;
   path: string;
 }
@@ -436,5 +461,127 @@ export const downloadPyPaperBot = async (params: PyPaperBotDownloadParams): Prom
 export const getCurrentDir = async (): Promise<CurrentDirResponse> => {
   const response = await apiClient.get<CurrentDirResponse>('current-dir');
   return response.data;
+};
+
+interface MarkdownConversionResponse {
+  content: string[];
+  total_pages: number;
+  base_path: string;
+}
+
+export const convertPDFToMarkdown = async (
+  projectName: string,
+  fileType: 'uploaded' | 'downloaded',
+  fileName: string
+): Promise<{ content: string[], totalPages: number, basePath: string }> => {
+  try {
+    const response = await apiClient.post<MarkdownConversionResponse>(
+      `/pdf/convert-to-markdown/${projectName}/${fileType}/${fileName}`,
+      {},
+      {
+        headers: {
+          'Accept': 'application/json',
+        },
+      }
+    );
+    return {
+      content: response.data.content,
+      totalPages: response.data.total_pages,
+      basePath: response.data.base_path,
+    };
+  } catch (error) {
+    console.error('Error converting PDF to Markdown:', error);
+    throw error;
+  }
+};
+
+export interface ConvertAllPDFsResponse {
+  message: string;
+  converted: number;
+  total: number;
+}
+
+export const convertAllProjectPDFs = async (projectName: string): Promise<ConvertAllPDFsResponse> => {
+  try {
+    const response = await apiClient.post<ConvertAllPDFsResponse>(
+      `/project/${projectName}/convert-all-pdfs`
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error converting all PDFs:', error);
+    throw error;
+  }
+};
+
+// RAG Chat types and functions
+interface RAGStats {
+  total_documents: number;
+  sources: string[];
+}
+
+interface RAGChatResponse {
+  response: string;
+}
+
+export const processProjectMarkdown = async (projectName: string): Promise<{ message: string; stats: RAGStats }> => {
+  try {
+    const response = await apiClient.post<{ message: string; stats: RAGStats }>(
+      `/rag/${encodeURIComponent(projectName)}/process`
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error processing markdown:', error);
+    throw error;
+  }
+};
+
+export const ragChat = async (
+  projectName: string,
+  query: string,
+  chatHistory?: any[]
+): Promise<RAGChatResponse> => {
+  try {
+    const formData = new FormData();
+    formData.append('query', query);
+    if (chatHistory) {
+      formData.append('chat_history', JSON.stringify(chatHistory));
+    }
+
+    const response = await apiClient.post<RAGChatResponse>(
+      `/rag/${encodeURIComponent(projectName)}/chat`,
+      formData,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error in RAG chat:', error);
+    throw error;
+  }
+};
+
+export const getRagStats = async (projectName: string): Promise<RAGStats> => {
+  try {
+    const response = await apiClient.get<RAGStats>(
+      `/rag/${encodeURIComponent(projectName)}/stats`
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error getting RAG stats:', error);
+    throw error;
+  }
+};
+
+export const getEmbeddingsVisualization = async (projectName: string) => {
+  try {
+    const response = await axios.get(`/api/rag/${projectName}/visualize`);
+    return response.data;
+  } catch (error) {
+    handleApiError(error);
+    throw error;
+  }
 };
 

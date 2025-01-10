@@ -2,10 +2,12 @@ import React, { useState } from 'react';
 import { MessageSquare, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChatPage } from '../pages/ChatPage';
+import { useStore } from '../store/useStore';
 
 export function ChatButton() {
   const [isOpen, setIsOpen] = useState(false);
   const [isFullScreen, setIsFullScreen] = useState(false);
+  const geminiKey = useStore((state) => state.geminiKey);
 
   return (
     <>

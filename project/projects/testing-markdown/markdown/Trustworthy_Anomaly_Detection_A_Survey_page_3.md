@@ -1,0 +1,35 @@
+Page 3
+
+Many state-of-the-art anomaly detection models are based on deep learning models that are considered as black-box models. Because anomaly detection models are commonly deployed in applications involving human beings, it is important to achieve interpretability to avoid potential risk against humans [Panjei et al. , 2022].
+
+Interpretable anomaly detection aims to provide explanations to individual or group predictions, especially for samples detected as anomalies. In literature, interpretable machine learning techniques can be grouped into two categories: intrinsic interpretability and post-hoc interpretability, depending on the time when the interpretability is achieved [Du et al. , 2018]. Intrinsic interpretability means the models are self-explanatory and usually is achieved by incorporating interpretability constraints or adding interpretable layers in model structures. Post-hoc interpretability indicates the use of a second model to provide explanations for the deployed model. There are two commonly-used post-hoc inter-
+
+pretable techniques, perturbation-based and gradient-based approaches. Perturbation-based approaches try to find features that significantly affect model outcomes by sequentially removing or replacing a feature, while gradient-based approaches calculate the gradient of an output with respect to each input feature to derive its contribution
+
+The majority of existing interpretable machine learning models are developed for supervised learning tasks, such as image and text classification tasks, where the labels are available. However, anomaly detection models are usually semisupervised or unsupervised learning models. How to interpret anomaly detection results with only observing the normal samples is a challenge.
+
+## 4.1 Approaches
+
+Several studies extend the density-based anomaly detection approaches to achieve interpretability. GEE adopts VAE to capture normal patterns and derives anomaly scores for multivariate input samples [Nguyen et al. , 2019]. The posthoc interpretation is achieved based on a gradient-based approach, where features with large absolute gradients indicate significant contribution to the output. CAVGA adopts the convolution-VAE to learn the latent representation with the preservation of spatial information of images and incorporates an attention map for interpretation [Venkataramanan et al. , 2020]. The attention map is trained to cover all the normal regions and the anomalous regions can then be highlighted as the attention map without covering.
+
+Several interpretable one-class anomaly detection models are developed. FCDD provides intrinsic interpretation by generating anomaly heat maps to highlight anomalous regions in abnormal maps [Liznerski et al. , 2021]. Its core idea is to generate a matrix with entries corresponding to the abnormal regions in an image. If an image is abnormal, the sum of all entries in the matrix should be maximized, while the sum for a normal image should be minimized. Besides image data, an attention mechanism, which can highlight the important features in sequential data, is used to identify anomalous events in log anomaly detection [Brown et al. , 2018]. To enhance the traditional one-class anomaly detec-
+
+tion models with explanations, one direction is neuralization, which is to convert the non-neural network models to functionally equivalent neural network models so that the interpretation techniques developed for deep learning models can be leveraged [Kauffmann et al. , 2020]. For example, OCDTD models one-class SVM as a three-layer structure, consisting of feature extraction, distance computation, and pooling, and then applies the Layer-wise Relevance Propagation (LRP) interpretation approach to assign scores to input features [Kauffmann et al. , 2020]. Another direction is to combine the deep model with the shallow model. [Nguyen and Vien, 2018] develops an autoencoder based one-class support vector machine (AE-1SVM) and uses the gradient-based attribution methods to explain the detection results.
+
+Regarding the reconstruction-based anomaly detection models, [Antwarg et al. , 2020] develops interpretable autoencoder models to identify features leading to high reconstruction errors based on SHAP, which is able to provide post-hoc interpretation of detection results.
+
+Some other techniques are also developed to achieve interpretable anomaly detection. To leverage the interpretable techniques for supervised learning models, [Sipple, 2020] develops a framework, which first generates anomalies by negative sampling to train a binary classifier and then adopts a gradient-based approach to detect abnormal features. InterpretableSAD further extends the above idea to achieve interpretable sequence anomaly detection [Han et al. , 2021]. DevNet is a few-shot learning-based anomaly detection model and also leverages the idea of the gradient-based approach to detect abnormal regions in an image [Pang et al. , 2021].
+
+## 4.2 Discussions
+
+Existing approaches mainly focus on providing interpretation on point anomalies, such as abnormal pixels in an image. Providing explanations on contextual and collective anomalies is more challenging and greatly needed. Meanwhile, besides providing local interpretation for a single prediction result, understanding why a group of samples are labeled as anomalies, i.e., local interpretability for a group of predictions, can provide more insights into abnormal behaviors.
+
+## 5 Fair Anomaly Detection
+
+The research community has well recognized that data-driven decision algorithms can produce unfair or biased decisions against a group of people, especially the minority groups, on the basis of some personal characteristics, such as gender, race, or age, called protected or sensitive attributes. Therefore, algorithmic fairness has received substantial attention in recent years [Zhang and Wu, 2017; Mehrabi et al. , 2021]. Currently, a large number of studies aim to achieve fairness in classical machine learning tasks, such as classification, regression, clustering, or dimensionality reduction [Mehrabi et al. , 2021]. Recently, researchers notice that ensuring fairness in anomaly detection is also critical. However, achieving fair anomaly detection has its unique challenges due to the potentially high correlation between minority groups and outliers, which means that anomaly detection approaches could produce injustice outcomes by overly flagging the samples from
+
+the minority groups as outliers. Currently, only a few studies target this emerging task.
+
+## 5.1 Approaches
+
+Following the typical requirements for fair machine learning models, existing approaches usually decompose fair anomaly detection into two objectives, anomaly detection and fair learning. Therefore, fair anomaly detection aims to find potential anomalies that substantially differ from the majority instances while maintaining insignificant to sensitive attribute subgroups [Davidson and Ravi, 2020].

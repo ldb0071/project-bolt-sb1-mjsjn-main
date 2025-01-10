@@ -7,6 +7,7 @@ import { Layout } from './components/Layout';
 import { SettingsPage } from './pages/SettingsPage';
 import { GettingStartedPage } from './pages/GettingStartedPage';
 import { TrendingAIPage } from './pages/TrendingAIPage';
+import { RAGChatPage } from './pages/RAGChatPage';
 import Box from '@mui/material/Box';
 
 function App() {
@@ -33,6 +34,7 @@ function App() {
                   <Route path="/projects/:projectId" element={<PDFViewerPage />} />
                   <Route path="/settings" element={<SettingsPage />} />
                   <Route path="/trending" element={<TrendingAIPage />} />
+                  <Route path="/rag-chat" element={<RAGChatPage />} />
                   <Route path="/" element={<Navigate to="/projects" replace />} />
                 </Routes>
               </Layout>

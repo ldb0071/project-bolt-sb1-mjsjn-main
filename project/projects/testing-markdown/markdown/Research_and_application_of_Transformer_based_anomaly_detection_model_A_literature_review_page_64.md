@@ -1,0 +1,13 @@
+Page 64
+
+AUC -ROC index. The calculation method is analogous to that of the AUC -ROC index, except that the two-dimensional horizontal and vertical coordinates are replaced by Recall and Precision , and calculating the area under the curve. AUC -PR is more suitable for weighting Precision and Recall , as well as selecting the appropriate threshold and focusing on the application scenarios of positive samples.
+
+To sum up, the commonly used evaluation indexes for Transformer based anomaly detection research can be summarized as follows:
+
+- 1. Pre , Rec , F 1, ROC , AUC , and other evaluation indexes can be regarded as the most widely used and generalized evaluation indexes in the field of anomaly detection. Researchers can use such evaluation indexes to compare performance with other research results quickly and intuitively;
+- 2. In different application scenarios, several evaluation indexes are specific to a certain application scenario and improved based on general evaluation indexes. For example, FAR and MAR are effective evaluation indexes to measure OOD detection performance. While the corresponding evaluation indexes in time series anomaly detection tasks should consider the problem of detection delay. This paper suggests that researchers can use such improved evaluation indexes to measure the performance of anomaly detection in a certain application scenario more accurately;
+- 3. Many scientific research results have mentioned the problem of model efficiency in the experimental part. In the context of big data, time efficiency has become a non-negligible factor in measuring the performance of anomaly detection models. However, few of the scientific research covered in this paper has separately proposed an evaluation index that can comprehensively consider both time efficiency and theoretical performance. Therefore, this paper argues that putting forward a comprehensive evaluation index considering both efficiency and performance should be the research focus of performance evaluation in this field [141].
+
+## 6.2 Datasets
+
+For different anomaly detection scenarios, different models use different datasets. In addition, for a small number of research results, the datasets are synthesized manually or collected from a private experimental platform, and such types of datasets are not considered in this paper. This article only examines the mainstream open-source datasets and some authorized datasets that can be publicly accessed. According to the division of application scenarios in Section 5, the corresponding datasets are organized and summarized in Table 4.

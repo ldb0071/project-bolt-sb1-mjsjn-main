@@ -1,0 +1,1 @@
+where ∇ x log 𝑝 𝑙 ( x ) is the score function of x 𝑙 , ¯ w is a Brownian motion in the reverse time direction and 𝑑𝑙 is a negative time step. In the reverse SDE, the unknown score function ∇ x log 𝑝 𝑙 ( x ) can be estimated as a score network 𝑆 𝜽 ( x , 𝑙 ) using the denoising score matching [30, 35]. The loss function to train the score network is given by

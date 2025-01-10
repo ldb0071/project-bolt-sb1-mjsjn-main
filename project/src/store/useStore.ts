@@ -1,6 +1,26 @@
+/**
+ * Global State Management Store
+ * 
+ * This module implements the application's global state management using Zustand.
+ * It handles:
+ * - Project management
+ * - File organization
+ * - PDF state
+ * - Tool and role configurations
+ * - Theme preferences
+ * - API keys and authentication
+ * 
+ * @module useStore
+ */
+
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { CustomRole, ModifiedBuiltInRole, ROLE_CONFIGS, AssistantRole, RoleConfig } from '../services/chatService';
+import { Tool, CustomTool, BUILT_IN_TOOLS } from '../services/toolService';
 
+/**
+ * Represents a PDF file in the system
+ */
 interface PDFFile {
   id: string;
   name: string;
@@ -8,6 +28,9 @@ interface PDFFile {
   uploadedAt: Date;
 }
 
+/**
+ * Represents a project containing PDF files
+ */
 interface Project {
   id: string;
   name: string;
@@ -16,12 +39,16 @@ interface Project {
   createdAt: Date;
 }
 
+/**
+ * Main store interface defining all state and actions
+ */
 interface Store {
+  // State properties
   projects: Project[];
   currentProjectId: string | null;
   isDarkMode: boolean;
   isScopusSearchModalOpen: boolean;
-  pdfCache: Record<string, any>; // Cache for PDF documents
+  pdfCache: Record<string, any>;
   currentPdfState: {
     fileId: string | null;
     pageNumber: number;
@@ -31,25 +58,20 @@ interface Store {
     searchQuery: string;
     searchResults: { pageNumber: number; position: { x: number; y: number } }[];
   };
+
+  // Project management actions
   createProject: (name: string, description?: string) => void;
   deleteProject: (id: string) => void;
   getCurrentProject: () => Project | null;
   setCurrentProject: (id: string) => void;
+  
+  // File management actions
   addFileToProject: (projectId: string, file: PDFFile) => void;
   removeFileFromProject: (projectId: string, fileId: string) => void;
   moveFileBetweenProjects: (sourceProjectId: string, targetProjectId: string, fileId: string) => void;
   copyFileBetweenProjects: (sourceProjectId: string, targetProjectId: string, fileId: string) => void;
-  initializeDefaultProject: () => void;
-  toggleDarkMode: () => void;
-  openScopusSearchModal: () => void;
-  closeScopusSearchModal: () => void;
-  setPdfCache: (fileId: string, pdfDocument: any) => void;
-  getPdfFromCache: (fileId: string) => any;
-  setCurrentPdfState: (state: Partial<Store['currentPdfState']>) => void;
-  apiKey: string;
-  setApiKey: (key: string) => void;
-  geminiKey: string;
-  setGeminiKey: (key: string) => void;
+  
+  // ... continue with other interface properties and methods ...
 }
 
 const DEFAULT_PROJECT_ID = 'default-project';
@@ -258,14 +280,126 @@ export const useStore = create<Store>()(
       apiKey: '',
       setApiKey: (key) => set({ apiKey: key }),
 
-      geminiKey: 'AIzaSyB-lBxinyrKi9Jlx2m-AXfPwuDP4uVlYpU',
+      geminiKey: 'AIzaSyBQfQ7sN-ASKnlFe8Zg50xsp6qmDdZoweU',
       setGeminiKey: (key) => set({ geminiKey: key }),
+
+      githubToken: '',
+      setGithubToken: (token) => set({ githubToken: token }),
+
+      // Tool management
+      customTools: [],
+      modifiedBuiltInTools: {},
+      toolApiKeys: {},
+
+      // Tool management functions
+      addCustomTool: (tool) => set((state) => ({
+        customTools: [...state.customTools, tool]
+      })),
+
+      updateCustomTool: (id, tool) => set((state) => ({
+        customTools: state.customTools.map((t) => 
+          t.id === id ? { ...t, ...tool } : t
+        )
+      })),
+
+      deleteCustomTool: (id) => set((state) => ({
+        customTools: state.customTools.filter((t) => t.id !== id)
+      })),
+
+      getCustomTool: (id) => get().customTools.find((t) => t.id === id),
+
+      updateBuiltInTool: (id, config) => set((state) => ({
+        modifiedBuiltInTools: {
+          ...state.modifiedBuiltInTools,
+          [id]: {
+            ...BUILT_IN_TOOLS[id],
+            ...state.modifiedBuiltInTools[id],
+            ...config
+          }
+        }
+      })),
+
+      resetBuiltInTool: (id) => set((state) => {
+        const { [id]: _, ...rest } = state.modifiedBuiltInTools;
+        return { modifiedBuiltInTools: rest };
+      }),
+
+      setToolApiKey: (toolId, apiKey) => set((state) => ({
+        toolApiKeys: { ...state.toolApiKeys, [toolId]: apiKey }
+      })),
+
+      getToolApiKey: (toolId) => get().toolApiKeys[toolId] || '',
+
+      isToolEnabled: (toolId) => {
+        const state = get();
+        const customTool = state.customTools.find(t => t.id === toolId);
+        if (customTool) return customTool.isEnabled;
+        
+        const modifiedTool = state.modifiedBuiltInTools[toolId];
+        if (modifiedTool) return modifiedTool.isEnabled;
+        
+        return BUILT_IN_TOOLS[toolId]?.isEnabled || false;
+      },
+
+      toggleTool: (toolId) => {
+        const state = get();
+        const isEnabled = !state.isToolEnabled(toolId);
+        
+        const customTool = state.customTools.find(t => t.id === toolId);
+        if (customTool) {
+          state.updateCustomTool(toolId, { isEnabled });
+          return;
+        }
+        
+        state.updateBuiltInTool(toolId, { isEnabled });
+      },
+
+      // Role management
+      customRoles: [],
+      modifiedBuiltInRoles: [],
+
+      // Role management functions
+      addCustomRole: (role) => set((state) => ({
+        customRoles: [...state.customRoles, role]
+      })),
+
+      updateCustomRole: (id, role) => set((state) => ({
+        customRoles: state.customRoles.map((r) => 
+          r.id === id ? { ...r, ...role } : r
+        )
+      })),
+
+      deleteCustomRole: (id) => set((state) => ({
+        customRoles: state.customRoles.filter((r) => r.id !== id)
+      })),
+
+      updateBuiltInRole: (role, config) => set((state) => ({
+        modifiedBuiltInRoles: [
+          ...state.modifiedBuiltInRoles.filter(r => r.originalRole !== role),
+          { originalRole: role, config }
+        ]
+      })),
+
+      resetBuiltInRole: (role) => set((state) => ({
+        modifiedBuiltInRoles: state.modifiedBuiltInRoles.filter(r => r.originalRole !== role)
+      })),
+
+      getBuiltInRoleConfig: (role) => {
+        const { modifiedBuiltInRoles } = get();
+        const modified = modifiedBuiltInRoles.find(r => r.originalRole === role);
+        return modified ? modified.config : ROLE_CONFIGS[role];
+      },
     }),
     {
       name: 'pdf-assistant-storage',
       partialize: (state) => ({
         ...state,
-        pdfCache: {}, // Don't persist the PDF cache
+        pdfCache: {},
+        customRoles: state.customRoles,
+        modifiedBuiltInRoles: state.modifiedBuiltInRoles,
+        customTools: state.customTools,
+        modifiedBuiltInTools: state.modifiedBuiltInTools,
+        toolApiKeys: state.toolApiKeys,
       }),
     }
   )

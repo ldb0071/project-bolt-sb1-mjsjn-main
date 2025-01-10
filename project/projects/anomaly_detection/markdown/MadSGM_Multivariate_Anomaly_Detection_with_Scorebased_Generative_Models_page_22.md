@@ -1,0 +1,3 @@
+- (1) To our best knowledge, we present a time-series anomaly detection method based on SGMs for the /first time and consider the broadest ever set of anomaly measurements: i) the reconstruction-based, ii) the density-based, and iii) the gradient-based ones.
+- (2) We train our conditional score network by using our proposed denoising score matching loss, which is specially designed for time-series anomaly detection. We also adopt the puri/fication strategy to achieve the fairness in the decision process by preventing the propagation of anomaly decisions.
+- (3) We conduct comprehensive experiments on /five benchmark datasets for the time-series anomaly detection. Our results illustrate that MadSGM has better and more robust performance than baselines.

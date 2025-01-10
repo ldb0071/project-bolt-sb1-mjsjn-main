@@ -1,5 +1,6 @@
 import React, { useState, useEffect, ReactNode, ReactElement } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import ReactMarkdown from 'react-markdown';
 
 interface StreamingTextProps {
   children: ReactNode;
@@ -45,17 +46,7 @@ export function StreamingText({ children, speed = 10, className = '', onComplete
         // Call onComplete callback when streaming is done
         onComplete?.();
         // Set the final content with markdown rendering
-        if (React.isValidElement(children)) {
-          const element = children as ReactElement<MarkdownProps>;
-          setDisplayedContent(
-            React.cloneElement(element, {
-              ...element.props,
-              children: content
-            })
-          );
-        } else {
-          setDisplayedContent(content);
-        }
+        setDisplayedContent(content);
       }
     }, speed);
 
@@ -91,7 +82,7 @@ export function StreamingText({ children, speed = 10, className = '', onComplete
             </motion.span>
           </>
         ) : (
-          displayedContent
+          <ReactMarkdown>{displayedContent}</ReactMarkdown>
         )}
       </motion.div>
     </AnimatePresence>
