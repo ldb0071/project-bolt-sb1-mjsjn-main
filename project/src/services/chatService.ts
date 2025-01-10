@@ -15,6 +15,7 @@ import { apiClient } from './apiClient';
 import { useStore } from '../store/useStore';
 import { Tool } from './toolService';
 import { handleAdminCommand, AdminCommandResult } from './adminService';
+import OpenAI from "openai";
 
 /**
  * Represents a chat message in the system
@@ -284,7 +285,7 @@ const buildGeminiPrompt = (
 };
 
 const callGeminiAPI = async (
-  formattedMessages: { role: 'user' | 'assistant' | 'system'; parts: { text: string }[] }[],
+  formattedMessages: { role: 'user' | 'assistant' | 'system'; parts: Array<{ text?: string } | { inline_data: { mime_type: string; data: string } }> }[],
   apiKey: string,
   model: ModelId = "gemini-1.5-flash"
 ): Promise<any> => {
@@ -305,10 +306,7 @@ const callGeminiAPI = async (
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      contents: formattedMessages.map(msg => ({
-        role: msg.role,
-        parts: msg.parts
-      }))
+      contents: formattedMessages
     }),
   });
 
@@ -350,58 +348,20 @@ const formatResponse = (content: string): string => {
   return formatted;
 };
 
-// Update model types to only include gpt-4o for Azure
-export type AzureModelId = 'gpt-4o';
-export type ModelId = 'gemini-2.0-flash-exp' | 'gemini-1.5-flash' | 'gemini-1.0-pro' | 'gemini-1.5-pro' | 'gemini-2.0-flash-thinking-exp-1219' | AzureModelId;
+// Update model types to include new models
+export type ModelId = 'gemini-2.0-flash-exp' | 'gemini-1.5-flash' | 'gemini-1.0-pro' | 'gemini-1.5-pro' | 'gemini-2.0-flash-thinking-exp-1219' | 'gpt-4o' | 'o1' | 'gpt-4o-mini' | 'Cohere-command-r' | 'Llama-3.2-90B-Vision-Instruct';
 
-export const AVAILABLE_MODELS: Record<ModelId, { name: string; type: 'gemini' | 'azure' }> = {
-  'gemini-2.0-flash-exp': { name: 'Gemini 2.0 Flash (Experimental)', type: 'gemini' },
-  'gemini-1.5-flash': { name: 'Gemini 1.5 Flash', type: 'gemini' },
-  'gemini-1.0-pro': { name: 'Gemini 1.0 Pro', type: 'gemini' },
-  'gemini-1.5-pro': { name: 'Gemini 1.5 Pro', type: 'gemini' },
-  'gemini-2.0-flash-thinking-exp-1219': { name: 'Gemini 2.0 Flash Thinking', type: 'gemini' },
-  'gpt-4o': { name: 'GPT-4', type: 'azure' }
-};
-
-const callAzureAPI = async (
-  messages: { role: string; content: string }[],
-  githubToken: string
-): Promise<any> => {
-  try {
-    console.log('Starting Azure API call...');
-    console.log('Messages:', JSON.stringify(messages, null, 2));
-
-    const response = await fetch('http://localhost:8080/api/chat', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${githubToken}`
-      },
-      body: JSON.stringify({
-        messages,
-        model: 'gpt-4o'
-      })
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Azure API Error:', {
-        status: response.status,
-        statusText: response.statusText,
-        error: errorText
-      });
-      throw new Error(`Azure API error: ${response.status} - ${errorText}`);
-    }
-
-    const data = await response.json();
-    console.log('Azure API Response:', data);
-    return {
-      content: formatResponse(data.content)
-    };
-  } catch (error) {
-    console.error('Azure API Error:', error);
-    throw error;
-  }
+export const AVAILABLE_MODELS: Record<ModelId, { name: string; type: 'gemini' | 'gpt4'; supportsImages?: boolean }> = {
+  'gemini-2.0-flash-exp': { name: 'Gemini 2.0 Flash (Experimental)', type: 'gemini', supportsImages: true },
+  'gemini-1.5-flash': { name: 'Gemini 1.5 Flash', type: 'gemini', supportsImages: true },
+  'gemini-1.0-pro': { name: 'Gemini 1.0 Pro', type: 'gemini', supportsImages: true },
+  'gemini-1.5-pro': { name: 'Gemini 1.5 Pro', type: 'gemini', supportsImages: true },
+  'gemini-2.0-flash-thinking-exp-1219': { name: 'Gemini 2.0 Flash Thinking', type: 'gemini', supportsImages: true },
+  'gpt-4o': { name: 'GPT-4 Online', type: 'gpt4' },
+  'o1': { name: 'O1 Model', type: 'gpt4' },
+  'gpt-4o-mini': { name: 'GPT-4 Online Mini', type: 'gpt4' },
+  'Cohere-command-r': { name: 'Cohere Command', type: 'gpt4' },
+  'Llama-3.2-90B-Vision-Instruct': { name: 'Llama Vision', type: 'gpt4', supportsImages: true }
 };
 
 const extractGeminiResponse = (data: any): string => {
@@ -440,6 +400,108 @@ export interface ModifiedBuiltInRole {
   config: RoleConfig;
 }
 
+const callGPT4API = async (
+  messages: { role: 'user' | 'assistant' | 'system'; content: string; image?: string; messageId?: string }[],
+  apiKey: string = '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',
+  model: string = 'gpt-4o'
+): Promise<any> => {
+  try {
+    console.log('Starting GPT-4 API call...');
+    console.log('Messages:', JSON.stringify(messages, null, 2));
+
+    const endpoint = 'https://models.inference.ai.azure.com';
+    
+    // Configure request body based on model
+    let requestBody: any = {
+      messages: messages.map(({ messageId, ...msg }) => {
+        // Convert image to base64 if present
+        if (msg.image) {
+          const imageData = msg.image.replace(/^data:image\/[^;]+;base64,/, '');
+          return {
+            ...msg,
+            content: [
+              { type: 'text', text: msg.content || '' },
+              { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${imageData}` } }
+            ]
+          };
+        }
+        return msg;
+      }),
+      model: model
+    };
+
+    // Add model-specific parameters
+    if (model === 'o1') {
+      requestBody = {
+        ...requestBody,
+        max_completion_tokens: 1000
+      };
+    } else if (model === 'Cohere-command-r') {
+      requestBody = {
+        ...requestBody,
+        temperature: 1.0,
+        top_p: 1.0,
+        max_tokens: 1000,
+        stream: false
+      };
+    } else if (model === 'Llama-3.2-90B-Vision-Instruct') {
+      requestBody = {
+        ...requestBody,
+        temperature: 1.0,
+        top_p: 1.0,
+        max_tokens: 4000,
+        stream: false
+      };
+    } else {
+      requestBody = {
+        ...requestBody,
+        temperature: 1.0,
+        top_p: 1.0,
+        max_tokens: 1000,
+        stream: false
+      };
+    }
+
+    console.log('Request body:', JSON.stringify(requestBody, null, 2));
+    console.log('Using API key:', apiKey);
+    console.log('Using model:', model);
+
+    const response = await fetch(`${endpoint}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'api-key': apiKey,
+        'x-ms-model-mesh-model-name': model
+      },
+      body: JSON.stringify(requestBody)
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error('API Error:', errorData);
+      throw new Error(errorData.error?.message || `HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    console.log('GPT-4 API Response:', data);
+
+    return {
+      content: formatResponse(data.choices[0].message.content || '')
+    };
+  } catch (error) {
+    console.error('GPT-4 API Error:', error);
+    throw error;
+  }
+};
+
+// Message type with optional image property
+interface ChatMessageWithImage {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  image?: string;
+}
+
+// Update sendChatMessage to handle GPT-4
 export const sendChatMessage = async (
   messages: ChatMessage[],
   apiKey: string = "AIzaSyBQfQ7sN-ASKnlFe8Zg50xsp6qmDdZoweU",
@@ -482,7 +544,6 @@ export const sendChatMessage = async (
     let arxivPapers: ArxivPaper[] = [];
     if (isResearchQuery) {
       try {
-        // Extract desired number of papers from the message
         const paperCount = extractPaperCount(lastMessage.content);
         console.log(`Requesting ${paperCount} papers`);
 
@@ -500,73 +561,77 @@ export const sendChatMessage = async (
     }
 
     // Format the response based on the model type
-    if (modelConfig.type === 'azure') {
-      console.log('Using Azure model with GitHub token');
-      if (!githubToken) {
-        throw new Error("GitHub token is required for Azure OpenAI models");
-      }
-
-      // Format messages for Azure API
-      const formattedMessages = messages.map(msg => ({
-        role: msg.role,
-        content: msg.content || ''
+    if (modelConfig.type === 'gpt4') {
+      console.log('Using GPT-4 model with API key');
+      
+      // Take only the last 5 messages to stay within token limits
+      const recentMessages = messages.slice(-5);
+      const formattedMessages = [
+        {
+          role: 'system' as const,
+          content: roleConfig.systemPrompt.substring(0, 500) // Truncate system prompt
+        },
+        ...recentMessages.map(msg => {
+          // Handle image messages
+          if (msg.image) {
+            // Reduce image quality
+            let reducedImage = msg.image;
+            if (reducedImage.startsWith('data:image')) {
+              try {
+                // Create temporary image element
+                const img = new Image();
+                img.src = reducedImage;
+                
+                // Create canvas for image compression
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                
+                // Set reduced dimensions (max 800px)
+                const maxDim = 800;
+                let width = img.width;
+                let height = img.height;
+                
+                if (width > maxDim || height > maxDim) {
+                  if (width > height) {
+                    height = (height / width) * maxDim;
+                    width = maxDim;
+                  } else {
+                    width = (width / height) * maxDim;
+                    height = maxDim;
+                  }
+                }
+                
+                canvas.width = width;
+                canvas.height = height;
+                
+                // Draw and compress image
+                ctx?.drawImage(img, 0, 0, width, height);
+                reducedImage = canvas.toDataURL('image/jpeg', 0.5); // Reduce quality to 50%
+              } catch (error) {
+                console.warn('Failed to reduce image quality:', error);
+              }
+            }
+            
+            return {
+              role: msg.role === 'system' ? 'user' as const : msg.role as 'user' | 'assistant',
+              content: msg.content?.substring(0, 1000) || '', // Truncate long messages
+              image: reducedImage
+            };
+          }
+          
+          // Handle text-only messages
+          return {
+            role: msg.role === 'system' ? 'user' as const : msg.role as 'user' | 'assistant',
+            content: msg.content?.substring(0, 1000) || '' // Truncate long messages
+          };
+        })
+      ].map((msg, index) => ({
+        ...msg,
+        messageId: `msg-${index}` // Add unique IDs for React keys
       }));
 
-      // Add system message with research paper summarization format
-      let systemPrompt = `${ROLE_CONFIGS[role].systemPrompt || 'You are a helpful research assistant.'}\n\n`;
-      systemPrompt += 'Please structure your research summary in the following format:\n\n';
-      systemPrompt += '# Research Summary\n\n';
-      systemPrompt += '## Key Research Questions\n';
-      systemPrompt += '- List the main research questions addressed\n\n';
-      systemPrompt += '## Methodology Overview\n';
-      systemPrompt += '- Research approach\n';
-      systemPrompt += '- Data collection methods\n';
-      systemPrompt += '- Analysis techniques\n\n';
-      systemPrompt += '## Key Findings\n';
-      systemPrompt += '- Main results and discoveries\n';
-      systemPrompt += '- Statistical significance\n';
-      systemPrompt += '- Practical implications\n\n';
-      systemPrompt += '## Technical Implementation\n';
-      systemPrompt += '- Algorithms used\n';
-      systemPrompt += '- Model architectures\n';
-      systemPrompt += '- Performance metrics\n\n';
-      systemPrompt += '## Benchmarking Results\n';
-      systemPrompt += '| Model/Method | Metrics | Performance |\n';
-      systemPrompt += '|--------------|---------|-------------|\n\n';
-      systemPrompt += '## Future Research Directions\n';
-      systemPrompt += '- Limitations of current approach\n';
-      systemPrompt += '- Potential improvements\n';
-      systemPrompt += '- Open research questions\n\n';
-      systemPrompt += '## Critical Analysis\n';
-      systemPrompt += '- Strengths of the approach\n';
-      systemPrompt += '- Limitations and constraints\n';
-      systemPrompt += '- Comparison with existing methods\n\n';
-
-      if (arxivPapers.length > 0) {
-        systemPrompt += '# Relevant Research Papers\n\n';
-        arxivPapers.forEach((paper, index) => {
-          systemPrompt += `## Paper ${index + 1}: ${paper.title}\n\n`;
-          systemPrompt += `**Authors:** ${paper.authors.join(', ')}\n\n`;
-          systemPrompt += `**Summary:**\n${paper.summary}\n\n`;
-          systemPrompt += `**Key Contributions:**\n`;
-          systemPrompt += `- Extract and list key contributions from the summary\n`;
-          systemPrompt += `- Focus on novel methods and findings\n`;
-          systemPrompt += `- Highlight practical applications\n\n`;
-          systemPrompt += `**Technical Details:**\n`;
-          systemPrompt += `- Methods and algorithms used\n`;
-          systemPrompt += `- Performance metrics and results\n`;
-          systemPrompt += `- Implementation details\n\n`;
-          systemPrompt += `**PDF Link:** [${paper.title}](${paper.pdfUrl})\n\n`;
-        });
-      }
-
-      formattedMessages.unshift({
-        role: 'system',
-        content: systemPrompt
-      });
-
-      console.log('Formatted messages for Azure:', formattedMessages);
-      const response = await callAzureAPI(formattedMessages, githubToken);
+      console.log('Formatted messages for GPT-4:', formattedMessages);
+      const response = await callGPT4API(formattedMessages, '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', model);
       return {
         content: response.content,
         arxivPapers
@@ -580,34 +645,7 @@ export const sendChatMessage = async (
       const contextMessages = messages.slice(-10);
       const lastMessage = contextMessages[contextMessages.length - 1];
 
-      // Handle image if present
-      if (lastMessage.image) {
-        const response = await fetch(
-          'http://localhost:8000/api/analyze',
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              text: lastMessage.content || "Please analyze this image",
-              image: lastMessage.image
-            })
-          }
-        );
-
-        if (!response.ok) {
-          throw new Error('Failed to analyze image');
-        }
-
-        const data = await response.json();
-        return {
-          content: formatResponse(data.response),
-          arxivPapers
-        };
-      }
-
-      // Format messages for Gemini with paper context
+      // Format messages for Gemini with paper context and image support
       let paperContext = '';
       if (arxivPapers.length > 0) {
         paperContext = '\n### Relevant Research Papers\n' + arxivPapers.map(paper => 
@@ -625,16 +663,36 @@ Please format your response using markdown:
 - Keep responses clear and well-structured
 `;
 
-      const formattedMessages = contextMessages.map((msg, index) => ({
-        role: msg.role,
-        parts: [{ 
-          text: index === 0 
-            ? `${roleConfig.systemPrompt}\n\n${formattingInstructions}${msg.content || ''}`
-            : index === contextMessages.length - 1 && paperContext 
-              ? msg.content + paperContext 
-              : msg.content || '' 
-        }],
-      }));
+      const formattedMessages = contextMessages.map((msg, index) => {
+        const parts: Array<{ text?: string } | { inline_data: { mime_type: string; data: string } }> = [];
+        
+        // Add text content
+        const text = index === 0 
+          ? `${roleConfig.systemPrompt}\n\n${formattingInstructions}${msg.content || ''}`
+          : index === contextMessages.length - 1 && paperContext 
+            ? msg.content + paperContext 
+            : msg.content || '';
+            
+        if (text) {
+          parts.push({ text });
+        }
+        
+        // Add image if present
+        if (msg.image) {
+          const imageData = msg.image.replace(/^data:image\/[^;]+;base64,/, '');
+          parts.push({
+            inline_data: {
+              mime_type: 'image/jpeg',
+              data: imageData
+            }
+          });
+        }
+        
+        return {
+          role: msg.role,
+          parts
+        };
+      });
 
       const response = await callGeminiAPI(formattedMessages, apiKey, model);
       const content = extractGeminiResponse(response);

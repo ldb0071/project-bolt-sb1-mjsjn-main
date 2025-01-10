@@ -1,11 +1,13 @@
 import os
 import logging
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Union
 from dotenv import load_dotenv
 from openai import AzureOpenAI
+from openai.types.chat import ChatCompletion
+from openai.types.embedding import Embedding
 from document_processor import DocumentProcessor
 from vector_store import ChromaStore
-from models import MarkdownDocument, DocumentChunk
+from models import MarkdownDocument, DocumentChunk, SearchResult
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -102,7 +104,7 @@ class RAGService:
             logger.error(f"Error initializing RAG service: {e}")
             raise
 
-    async def process_markdown_files(self, project_name: str, markdown_dir: str) -> None:
+    async def process_markdown_files(self, project_name: str, markdown_dir: str = None) -> Dict[str, Any]:
         try:
             # Normalize project name for directory lookup
             safe_project_name = project_name.replace("-", "_").replace(" ", "_").lower()
@@ -110,7 +112,7 @@ class RAGService:
             # Construct the full path to the markdown directory
             base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             project_dir = os.path.join(base_dir, "projects", safe_project_name)
-            markdown_dir = os.path.join(project_dir, "markdown")
+            markdown_dir = markdown_dir or os.path.join(project_dir, "markdown")
             
             if not os.path.exists(markdown_dir):
                 raise ValueError(f"Directory not found: {markdown_dir}")
@@ -126,12 +128,14 @@ class RAGService:
                         markdown_files.append(full_path)
                         logger.info(f"Found markdown file: {full_path}")
             
+            if not markdown_files:
+                logger.warning(f"No markdown files found in {markdown_dir}")
+                return {"message": "No markdown files found", "files_processed": 0, "chunks_created": 0}
+            
             logger.info(f"Found {len(markdown_files)} markdown files")
             
-            # Process files in batches
-            batch_size = 5
-            chunks = []
-            total_chunks = 0
+            # Process all files and collect chunks
+            all_chunks = []
             
             for file_path in markdown_files:
                 try:
@@ -140,24 +144,27 @@ class RAGService:
                     
                     # Create chunks
                     document_chunks = self.document_processor.create_chunks(document)
-                    chunks.extend(document_chunks)
-                    total_chunks += len(document_chunks)
-                    
-                    # Process batch if it reaches the batch size
-                    if len(chunks) >= batch_size:
-                        self.vector_store.add_chunks(project_name, chunks)
-                        chunks = []
-                        logger.info(f"Processed {total_chunks} chunks so far...")
+                    all_chunks.extend(document_chunks)
                     
                 except Exception as e:
                     logger.error(f"Error processing {file_path}: {e}")
                     continue
             
-            # Process any remaining chunks
-            if chunks:
-                self.vector_store.add_chunks(project_name, chunks)
+            if not all_chunks:
+                logger.warning("No valid chunks were created from the markdown files")
+                return {"message": "No valid chunks created", "files_processed": len(markdown_files), "chunks_created": 0}
             
-            logger.info(f"Successfully processed {len(markdown_files)} files with {total_chunks} total chunks")
+            # Add all chunks in a single operation
+            try:
+                self.vector_store.add_chunks(project_name, all_chunks)
+                return {
+                    "message": "Successfully processed files",
+                    "files_processed": len(markdown_files),
+                    "chunks_created": len(all_chunks)
+                }
+            except Exception as e:
+                logger.error(f"Error adding chunks to vector store: {e}")
+                raise
             
         except Exception as e:
             logger.error(f"Error processing markdown files: {e}")
@@ -183,8 +190,8 @@ class RAGService:
                 {"role": "user", "content": query}
             ]
             
-            response = self.llm.create(
-                model="gpt-4",
+            response: ChatCompletion = self.llm.create(
+                model="gpt-4o",
                 messages=messages,
                 temperature=0.3,
                 max_tokens=1000
