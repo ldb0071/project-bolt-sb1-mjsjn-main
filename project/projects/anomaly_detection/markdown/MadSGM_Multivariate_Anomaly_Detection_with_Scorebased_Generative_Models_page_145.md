@@ -1,1 +1,0 @@
-Table 6: Experimental results according to various anomaly measurement settings in the proposed method.Table 7: Experimental results by changing 𝜏 , a hyperparameter for the di/ffusion step of the forward SDE in the puri/fication process.

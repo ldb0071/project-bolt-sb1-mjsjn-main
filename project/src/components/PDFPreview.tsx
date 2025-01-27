@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, ChevronRight, Maximize2, Minimize2, Loader, AlertTriangle, X, LayoutGrid, Camera, Image, Trash2, Type, FileText, FileCode } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Maximize2, Minimize2, Loader, AlertTriangle, X, LayoutGrid, Camera, Image as ImageIcon, Trash2, Type, FileText, FileCode, StickyNote } from 'lucide-react';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 import toast from 'react-hot-toast';
@@ -181,6 +181,14 @@ const PDFFile: React.FC<PDFFileProps> = ({ file }) => {
   const [currentMarkdownPage, setCurrentMarkdownPage] = useState(1);
   const [markdownBasePath, setMarkdownBasePath] = useState<string | null>(null);
   const [isMarkdownView, setIsMarkdownView] = useState(false);
+  const [notes, setNotes] = useState<Array<{
+    id: string;
+    text: string;
+    selectedText: string;
+    pageNumber: number;
+    timestamp: string;
+  }>>([]);
+  const [showNotes, setShowNotes] = useState(false);
 
   // Construct the full URL for the PDF file
   const fileUrl = file.path.startsWith('http') 
@@ -401,6 +409,9 @@ const PDFFile: React.FC<PDFFileProps> = ({ file }) => {
     style.textContent = `
       .pdf-page-content {
         position: relative !important;
+        -webkit-transform-style: preserve-3d;
+        transform-style: preserve-3d;
+        will-change: transform;
       }
       
       .pdf-page-content .react-pdf__Page__textContent {
@@ -423,6 +434,9 @@ const PDFFile: React.FC<PDFFileProps> = ({ file }) => {
         width: 100% !important;
         height: 100% !important;
         transform: scale(1) !important;
+        -webkit-transform-origin: 0 0 !important;
+        -webkit-transform: scale(1) !important;
+        -webkit-font-smoothing: subpixel-antialiased;
       }
       
       .pdf-page-content .react-pdf__Page__textContent span {
@@ -431,13 +445,16 @@ const PDFFile: React.FC<PDFFileProps> = ({ file }) => {
         position: absolute !important;
         white-space: pre !important;
         transform-origin: 0% 0% !important;
+        -webkit-transform-origin: 0% 0% !important;
         line-height: 1.0;
         pointer-events: ${isTextSelectionMode ? 'auto' : 'none'} !important;
+        -webkit-font-smoothing: subpixel-antialiased;
       }
       
       .pdf-page-content .react-pdf__Page__textContent span::selection {
         background: rgba(37, 99, 235, 0.2) !important;
         mix-blend-mode: multiply !important;
+        -webkit-background-clip: text;
       }
       
       .pdf-page-content .react-pdf__Page__textContent span::-moz-selection {
@@ -451,22 +468,31 @@ const PDFFile: React.FC<PDFFileProps> = ({ file }) => {
       
       .fullscreen .pdf-page-content {
         transform-origin: center center !important;
+        -webkit-transform-origin: center center !important;
+        will-change: transform;
       }
       
       .fullscreen .pdf-page-content .react-pdf__Page__textContent {
         transform-origin: 0 0 !important;
+        -webkit-transform-origin: 0 0 !important;
         transform: scale(${scale}) !important;
+        -webkit-transform: scale(${scale}) !important;
         width: ${100 / scale}% !important;
         height: ${100 / scale}% !important;
       }
       
       .fullscreen .pdf-page-content .react-pdf__Page__textContent span {
         transform-origin: 0 0 !important;
+        -webkit-transform-origin: 0 0 !important;
       }
 
       .pdf-page-content canvas {
         position: relative !important;
         z-index: 1;
+        -webkit-backface-visibility: hidden;
+        backface-visibility: hidden;
+        -webkit-transform: translateZ(0);
+        transform: translateZ(0);
       }
 
       ${getLinkStyles(isTextSelectionMode)}
@@ -475,7 +501,7 @@ const PDFFile: React.FC<PDFFileProps> = ({ file }) => {
     return () => {
       document.head.removeChild(style);
     };
-  }, [isTextSelectionMode, isFullScreen, scale]);
+  }, [isTextSelectionMode, scale]);
 
   // Add keyboard shortcut for text selection mode
   useEffect(() => {
@@ -599,6 +625,17 @@ const PDFFile: React.FC<PDFFileProps> = ({ file }) => {
   const Controls = () => {
     const handleConvertToMarkdown = async () => {
       try {
+        // Check if we already have the markdown content
+        const savedMarkdown = localStorage.getItem(`pdf-markdown-${file.id}`);
+        if (savedMarkdown) {
+          const { pages, basePath } = JSON.parse(savedMarkdown);
+          setMarkdownPages(pages);
+          setMarkdownBasePath(basePath);
+          setCurrentMarkdownPage(1);
+          setIsMarkdownView(true);
+          return;
+        }
+
         // Extract project name and file type from the file path
         const pathParts = file.path.split('/');
         const projectNameParts = pathParts.slice(3, -2);
@@ -618,6 +655,12 @@ const PDFFile: React.FC<PDFFileProps> = ({ file }) => {
           setMarkdownBasePath(basePath);
           setCurrentMarkdownPage(1);
           setIsMarkdownView(true);
+
+          // Save to localStorage
+          localStorage.setItem(`pdf-markdown-${file.id}`, JSON.stringify({
+            pages: content,
+            basePath: basePath
+          }));
 
           // Show success toast
           toast.dismiss(loadingToast);
@@ -731,7 +774,7 @@ const PDFFile: React.FC<PDFFileProps> = ({ file }) => {
             <FileText size={20} />
           </button>
 
-          {markdownPages.length > 0 && (
+          {markdownPages && markdownPages.length > 0 && (
             <>
               <div className="h-6 w-px bg-navy-700" />
               <button
@@ -763,6 +806,62 @@ const PDFFile: React.FC<PDFFileProps> = ({ file }) => {
   }, [isGridMode, scale, preGridScale]);
 
   const PDFContent = React.memo(() => {
+    // Add error boundary state
+    const [hasExtensionError, setHasExtensionError] = useState(false);
+
+    // Add error recovery function
+    const handleExtensionError = useCallback(() => {
+      setHasExtensionError(false);
+      // Attempt to reload the document
+      if (pdfContainerRef.current) {
+        const container = pdfContainerRef.current;
+        container.innerHTML = '';
+        setTimeout(() => {
+          setIsLoading(true);
+          setError(null);
+        }, 100);
+      }
+    }, []);
+
+    useEffect(() => {
+      // Handle extension context invalidation
+      const handleExtensionError = (error: Error) => {
+        if (error.message.includes('Extension context invalidated')) {
+          setHasExtensionError(true);
+          // Clear any existing error states
+          setError(null);
+          setIsLoading(false);
+        }
+      };
+
+      window.addEventListener('unhandledrejection', (event) => {
+        handleExtensionError(event.reason);
+      });
+
+      return () => {
+        window.removeEventListener('unhandledrejection', handleExtensionError);
+      };
+    }, []);
+
+    if (hasExtensionError) {
+      return (
+        <div className="flex flex-col items-center justify-center p-8 bg-navy-900 rounded-lg">
+          <AlertTriangle className="h-12 w-12 text-yellow-500 mb-4" />
+          <h3 className="text-lg font-semibold text-white mb-2">Browser Extension Conflict</h3>
+          <p className="text-gray-400 text-center mb-4">
+            There seems to be a conflict with one of your browser extensions.
+            Try disabling PDF-related extensions or reload the viewer.
+          </p>
+          <button
+            onClick={handleExtensionError}
+            className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors"
+          >
+            Reload Viewer
+          </button>
+        </div>
+      );
+    }
+
     if (isGridMode) {
       return (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 p-4 max-h-[80vh] overflow-y-auto">
@@ -789,6 +888,10 @@ const PDFFile: React.FC<PDFFileProps> = ({ file }) => {
                     <Loader className="animate-spin text-primary-400" />
                   </div>
                 }
+                onLoadError={(error) => {
+                  console.error('Error loading document in grid mode:', error);
+                  // Don't show error in grid mode to avoid multiple error messages
+                }}
               >
                 <Page
                   pageNumber={page}
@@ -837,7 +940,11 @@ const PDFFile: React.FC<PDFFileProps> = ({ file }) => {
             onLoadSuccess={onDocumentLoadSuccess}
             onLoadError={(error: Error) => {
               console.error('Error loading document:', error);
-              setError(error);
+              if (error.message.includes('Extension context invalidated')) {
+                setHasExtensionError(true);
+              } else {
+                setError(error);
+              }
               setIsLoading(false);
               toast.error('Error loading PDF. Please try again.');
             }}
@@ -859,7 +966,10 @@ const PDFFile: React.FC<PDFFileProps> = ({ file }) => {
               }
             }}
             externalLinkTarget="_blank"
-            options={PDF_LOADING_OPTIONS}
+            options={{
+              ...PDF_LOADING_OPTIONS,
+              disableExtensionCheck: true, // Add this to prevent extension conflicts
+            }}
           >
             <OptimizedPage pageNumber={pageNumber} />
           </Document>
@@ -870,56 +980,51 @@ const PDFFile: React.FC<PDFFileProps> = ({ file }) => {
 
   // Update text selection handler
   const handleTextSelection = useCallback((e: MouseEvent) => {
-    if (!isTextSelectionMode) return;
+    // Only handle text selection if text selection mode is enabled
+    if (!isTextSelectionMode || isMarkdownView) return;
 
     const selection = window.getSelection();
     const selectedText = selection?.toString().trim();
 
-    console.log('Text selection event:', {
-      type: e.type,
-      selectedText,
-      isTextSelectionMode,
-      target: e.target
-    });
-
     if (selectedText) {
-      e.preventDefault(); // Prevent default context menu
-      console.log('Setting selected text:', selectedText);
+      // Only prevent default and show popup in text selection mode
+      e.preventDefault();
+      e.stopPropagation();
       setSelectedText(selectedText);
       
       // Calculate position relative to the viewport
       const x = e.clientX;
       const y = e.clientY;
       
-      console.log('Setting context menu position:', { x, y });
       setContextMenuPosition({ x, y });
     } else {
-      // Only clear if clicking outside of the popup
+      // Only clear if clicking outside of the popup and in text selection mode
       const target = e.target as HTMLElement;
       if (!target.closest('.selection-popup') && !target.closest('.chat-window')) {
-        console.log('Clearing selection');
         setSelectedText('');
         setContextMenuPosition(null);
       }
     }
-  }, [isTextSelectionMode]);
+  }, [isTextSelectionMode, isMarkdownView]);
 
   // Update useEffect for text selection
   useEffect(() => {
     const handleMouseUp = (e: MouseEvent) => {
-      if (isTextSelectionMode) {
+      if (isTextSelectionMode && !isMarkdownView) {
         handleTextSelection(e);
       }
     };
 
     const handleContextMenu = (e: MouseEvent) => {
-      if (isTextSelectionMode) {
+      // Only prevent context menu in text selection mode
+      if (isTextSelectionMode && !isMarkdownView) {
         e.preventDefault();
         handleTextSelection(e);
       }
     };
 
-    if (isTextSelectionMode) {
+    // Only add listeners if in text selection mode
+    if (isTextSelectionMode && !isMarkdownView) {
       document.addEventListener('mouseup', handleMouseUp);
       document.addEventListener('contextmenu', handleContextMenu);
     }
@@ -928,10 +1033,10 @@ const PDFFile: React.FC<PDFFileProps> = ({ file }) => {
       document.removeEventListener('mouseup', handleMouseUp);
       document.removeEventListener('contextmenu', handleContextMenu);
     };
-  }, [handleTextSelection, isTextSelectionMode]);
+  }, [handleTextSelection, isTextSelectionMode, isMarkdownView]);
 
   const MarkdownPreview = () => {
-    if (!markdownPages.length) return null;
+    if (!markdownPages || !markdownPages.length) return null;
 
     return (
       <div className="w-full h-full flex flex-col">
@@ -958,14 +1063,56 @@ const PDFFile: React.FC<PDFFileProps> = ({ file }) => {
             </button>
           </div>
         </div>
-        <div className="flex-1 overflow-auto bg-navy-900 rounded-lg p-6">
-          <pre className="text-gray-200 font-mono whitespace-pre-wrap">
+        <div 
+          className="flex-1 overflow-auto bg-navy-900 rounded-lg p-6"
+          onMouseUp={(e) => e.stopPropagation()}
+          onContextMenu={(e) => e.stopPropagation()}
+        >
+          <pre 
+            className="text-gray-200 font-mono whitespace-pre-wrap"
+            onMouseUp={(e) => e.stopPropagation()}
+            onContextMenu={(e) => e.stopPropagation()}
+          >
             {markdownPages[currentMarkdownPage - 1]}
           </pre>
         </div>
       </div>
     );
   };
+
+  // Add note handler
+  const addNote = async (selectedText: string, noteText: string) => {
+    const newNote = {
+      id: Date.now().toString(),
+      text: noteText,
+      selectedText,
+      pageNumber,
+      timestamp: new Date().toLocaleString()
+    };
+    setNotes(prev => [...prev, newNote]);
+    // Save to localStorage
+    const savedNotes = JSON.parse(localStorage.getItem(`pdf-notes-${file.id}`) || '[]');
+    localStorage.setItem(`pdf-notes-${file.id}`, JSON.stringify([...savedNotes, newNote]));
+    toast.success('Note added successfully');
+  };
+
+  // Load notes from localStorage
+  useEffect(() => {
+    const savedNotes = localStorage.getItem(`pdf-notes-${file.id}`);
+    if (savedNotes) {
+      setNotes(JSON.parse(savedNotes));
+    }
+  }, [file.id]);
+
+  // Load markdown content from localStorage on mount
+  useEffect(() => {
+    const savedMarkdown = localStorage.getItem(`pdf-markdown-${file.id}`);
+    if (savedMarkdown) {
+      const { pages, basePath } = JSON.parse(savedMarkdown);
+      setMarkdownPages(pages);
+      setMarkdownBasePath(basePath);
+    }
+  }, [file.id]);
 
   return (
     <div className={`relative w-full h-full flex ${isFullScreen ? 'fullscreen' : ''}`} ref={pdfContainerRef}>
@@ -1058,8 +1205,21 @@ const PDFFile: React.FC<PDFFileProps> = ({ file }) => {
             }`}
             title="View Screenshots"
           >
-            <Image size={20} />
+            <ImageIcon size={20} />
             {!showScreenshots && screenshots.length > 0 && (
+              <div className="absolute -top-1 -right-1 w-2 h-2 bg-primary-500 rounded-full animate-pulse" />
+            )}
+          </button>
+
+          <button
+            onClick={() => setShowNotes(!showNotes)}
+            className={`p-2 hover:bg-navy-800/80 rounded-xl transition-all duration-200 ${
+              showNotes ? 'text-white bg-navy-800/80' : 'text-gray-400'
+            }`}
+            title="View Notes"
+          >
+            <StickyNote size={20} />
+            {!showNotes && notes.length > 0 && (
               <div className="absolute -top-1 -right-1 w-2 h-2 bg-primary-500 rounded-full animate-pulse" />
             )}
           </button>
@@ -1218,6 +1378,64 @@ const PDFFile: React.FC<PDFFileProps> = ({ file }) => {
         </div>
       )}
 
+      {/* Notes Panel */}
+      <div className={`fixed right-4 top-4 bottom-4 w-80 bg-navy-800 rounded-lg shadow-lg border border-navy-700 transition-transform duration-300 ${showNotes ? 'translate-x-0' : 'translate-x-full'} z-40`}>
+        <div className="p-4 border-b border-navy-700">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-white">Notes</h3>
+            <button
+              onClick={() => setShowNotes(false)}
+              className="p-1 hover:bg-navy-700 rounded text-gray-400 hover:text-white"
+            >
+              <X size={20} />
+            </button>
+          </div>
+        </div>
+        <div className="p-4 h-[calc(100%-5rem)] overflow-y-auto">
+          {notes.length === 0 ? (
+            <p className="text-center text-gray-400 py-4">No notes yet</p>
+          ) : (
+            <div className="space-y-4">
+              {notes.map((note) => (
+                <div key={note.id} className="bg-navy-900 rounded-lg p-4">
+                  <div className="text-sm text-gray-400 mb-2">
+                    Page {note.pageNumber} • {note.timestamp}
+                  </div>
+                  <div className="text-gray-300 text-sm mb-2 italic border-l-2 border-primary-500 pl-3">
+                    "{note.selectedText}"
+                  </div>
+                  <div className="text-white">{note.text}</div>
+                  <div className="mt-2 flex space-x-4">
+                    <button
+                      onClick={() => {
+                        const textToCopy = `Selected Text: "${note.selectedText}"\nNote: ${note.text}`;
+                        navigator.clipboard.writeText(textToCopy)
+                          .then(() => toast.success('Note copied to clipboard'))
+                          .catch(() => toast.error('Failed to copy note'));
+                      }}
+                      className="text-sm text-gray-400 hover:text-gray-300"
+                    >
+                      Copy
+                    </button>
+                    <button
+                      onClick={() => {
+                        const updatedNotes = notes.filter(n => n.id !== note.id);
+                        setNotes(updatedNotes);
+                        localStorage.setItem(`pdf-notes-${file.id}`, JSON.stringify(updatedNotes));
+                        toast.success('Note deleted');
+                      }}
+                      className="text-sm text-red-400 hover:text-red-300"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Text Selection Popup */}
       <AnimatePresence>
         {selectedText && contextMenuPosition && (
@@ -1229,6 +1447,7 @@ const PDFFile: React.FC<PDFFileProps> = ({ file }) => {
               setSelectedText('');
               setContextMenuPosition(null);
             }}
+            onAddNote={(noteText) => addNote(selectedText, noteText)}
           />
         )}
       </AnimatePresence>

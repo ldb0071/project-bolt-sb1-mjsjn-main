@@ -1,1 +1,0 @@
-Let T = { x 1 , · · · , x 𝑇 } , where x 𝑡 ∈ R 𝑚 is an observation at time 𝑡 , be a multivariate time-series sequence, and x 𝑡 -𝜔 : 𝑡 = { x 𝑡 -𝜔 , · · · , x 𝑡 } be a window of length 𝜔 + 1. Thus, T can be divided into 𝑇 -𝜔 sliding windows, i.e., {T 𝑗 } 𝑁 𝑗 = 1 , where 𝑁 = 𝑇 -𝜔 . We consider the

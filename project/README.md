@@ -108,3 +108,120 @@ project/
 
 ## Contact
 [Your contact information]
+
+# Data Loader Documentation
+
+## Overview
+`data_loader.py` is a core component that handles data loading and preprocessing for various time-series datasets used in anomaly detection. It provides standardized data loading interfaces for multiple datasets through PyTorch's DataLoader system.
+
+## Main Components
+
+### 1. Dataset Loaders
+The file implements four specialized dataset loaders:
+
+- **PSMSegLoader**
+  - Purpose: Loads Power System Machine (PSM) dataset
+  - Data Source: CSV files
+  - Validation: Uses test set as validation
+
+- **MSLSegLoader**
+  - Purpose: Loads Mars Science Laboratory (MSL) dataset
+  - Data Source: NumPy files
+  - Validation: Uses test set as validation
+
+- **SMAPSegLoader**
+  - Purpose: Loads Soil Moisture Active Passive (SMAP) dataset
+  - Data Source: NumPy files
+  - Validation: Uses test set as validation
+
+- **SMDSegLoader**
+  - Purpose: Loads Server Machine Dataset (SMD)
+  - Data Source: NumPy files
+  - Validation: Uses portion of training data
+
+### 2. Core Features
+
+#### Data Preprocessing
+- Standardization using sklearn's StandardScaler
+- Time series segmentation into fixed-size windows
+- Support for overlapping/non-overlapping segments
+- Train/validation/test split handling
+
+#### Data Iteration
+- Implementation of PyTorch Dataset interface
+- Support for batch processing
+- Efficient data loading through __len__ and __getitem__
+
+#### Configuration
+- Configurable window size
+- Adjustable step size for segmentation
+- Batch size customization
+- Multiple operation modes (train/valid/test)
+
+### 3. Utility Functions
+
+#### get_loader_segment
+```python
+def get_loader_segment(
+    data_path: str,
+    batch_size: int,
+    win_size: int,
+    step: int,
+    mode: str = "train",
+    dataset: str = "PSM"
+) -> DataLoader:
+```
+- **Purpose**: Factory function for creating dataset loaders
+- **Parameters**:
+  - data_path: Path to dataset files
+  - batch_size: Number of samples per batch
+  - win_size: Size of sliding window
+  - step: Step size for window sliding
+  - mode: Operating mode (train/valid/test)
+  - dataset: Dataset name (PSM/MSL/SMAP/SMD)
+- **Returns**: Configured PyTorch DataLoader
+
+## Related Files
+
+### Project Structure
+```
+project/
+├── data_factory/
+│   ├── __init__.py
+│   └── data_loader.py
+├── model/
+│   └── AnomalyTransformer.py
+├── main.py
+└── .gitignore
+```
+
+### File Dependencies
+- **main.py**: Entry point that utilizes the data loaders
+- **model/AnomalyTransformer.py**: Model implementation consuming loader data
+- **data_factory/__init__.py**: Package marker file
+- **.gitignore**: Git ignore configurations
+
+## Usage Example
+
+```python
+# Initialize data loader
+loader = get_loader_segment(
+    data_path="./data",
+    batch_size=32,
+    win_size=100,
+    step=100,
+    mode="train",
+    dataset="PSM"
+)
+
+# Iterate through batches
+for batch_x, batch_y in loader:
+    # Process batch
+    pass
+```
+
+## Notes
+- Datasets are not included in repository
+- Validation strategy varies by dataset
+- Supports both overlapping and non-overlapping window configurations
+- Implements efficient data loading through PyTorch's DataLoader system

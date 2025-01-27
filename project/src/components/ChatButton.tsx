@@ -2,22 +2,20 @@ import React, { useState } from 'react';
 import { MessageSquare, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChatPage } from '../pages/ChatPage';
-import { useStore } from '../store/useStore';
 
 export function ChatButton() {
   const [isOpen, setIsOpen] = useState(false);
   const [isFullScreen, setIsFullScreen] = useState(false);
-  const geminiKey = useStore((state) => state.geminiKey);
 
   return (
     <>
       {/* Chat Button */}
       <button
         onClick={() => setIsOpen(true)}
-        className="fixed bottom-6 right-6 p-4 bg-primary-500 hover:bg-primary-600 text-white rounded-full shadow-lg 
-          hover:shadow-xl transition-all duration-300 z-30 flex items-center gap-2"
+        className="fixed bottom-6 right-6 p-3 bg-primary-500 hover:bg-primary-600 text-white rounded-lg shadow-lg 
+          hover:shadow-xl transition-all duration-300 z-30 flex items-center gap-2 scale-100 hover:scale-105"
       >
-        <MessageSquare className="w-6 h-6" />
+        <MessageSquare className="h-5 w-5" />
         <span className="font-medium">Chat</span>
       </button>
 
@@ -36,18 +34,18 @@ export function ChatButton() {
             className={`fixed z-40 overflow-hidden bg-white dark:bg-navy-900 rounded-lg shadow-xl
               ${isFullScreen 
                 ? 'inset-0 rounded-none' 
-                : 'bottom-24 right-6 w-[400px] h-[600px]'}`}
+                : 'bottom-24 right-6 w-[500px] h-[400px]'}`}
           >
             <div className="absolute top-2 right-2 z-50">
               <button
                 onClick={() => setIsOpen(false)}
                 className="p-2 hover:bg-gray-100 dark:hover:bg-navy-800 rounded-lg transition-colors"
               >
-                <X className="w-5 h-5 text-gray-500" />
+                <X className="h-5 w-5 text-gray-500" />
               </button>
             </div>
             <div className="w-full h-full">
-              <ChatPage onFullScreenChange={setIsFullScreen} />
+              <ChatPage onFullScreenChange={setIsFullScreen} isInChatWindow={true} />
             </div>
           </motion.div>
         )}

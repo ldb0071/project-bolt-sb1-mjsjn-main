@@ -1,1 +1,0 @@
-Table 5: Experimental results in terms of F1 PA and the area under the curve (AUC) of F1 PA%K with varying 𝐾 . The best results are in boldface and the second ones are underlined. Avg.Rank denotes the average rank of each model.

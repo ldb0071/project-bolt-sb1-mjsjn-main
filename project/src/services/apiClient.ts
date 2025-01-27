@@ -14,9 +14,11 @@
  */
 
 import axios from 'axios';
+import { toast } from 'react-hot-toast';
 
 // Add API base URL configuration
 export const API_BASE = 'http://localhost:8080/api';
+const GITHUB_TOKEN = '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';
 
 /**
  * Configured Axios instance with default settings and interceptors
@@ -535,32 +537,179 @@ export const processProjectMarkdown = async (projectName: string): Promise<{ mes
   }
 };
 
-export const ragChat = async (
-  projectName: string,
-  query: string,
-  chatHistory?: any[]
-): Promise<RAGChatResponse> => {
-  try {
-    const formData = new FormData();
-    formData.append('query', query);
-    if (chatHistory) {
-      formData.append('chat_history', JSON.stringify(chatHistory));
-    }
+interface ChatMessage {
+  role: string;
+  content: string;
+}
 
-    const response = await apiClient.post<RAGChatResponse>(
-      `/rag/${encodeURIComponent(projectName)}/chat`,
-      formData,
-      {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      }
+interface ChatRequest {
+  messages: ChatMessage[];
+  model: string;
+}
+
+interface Source {
+  source: string;
+  section: string;
+  preview: string;
+  page?: number;
+}
+
+interface ChatResponse {
+  answer: string;
+  sources: Array<{
+    source: string;
+    section: string;
+    preview: string;
+    page?: number;
+  }>;
+}
+
+interface VisualizationData {
+  points: Array<{ x: number; y: number; id: number }>;
+  labels: Array<{
+    id: number;
+    source: string;
+    preview: string;
+    metadata: Record<string, any>;
+  }>;
+  error?: string;
+}
+
+interface GraphData {
+  nodes: Array<{
+    id: string;
+    label: string;
+    type: string;
+    color?: string;
+  }>;
+  links: Array<{
+    source: string;
+    target: string;
+    relationship: string;
+  }>;
+}
+
+export const getKnowledgeGraphVisualization = async (projectName: string): Promise<GraphData> => {
+  try {
+    const response = await apiClient.get<GraphData>(
+      `/rag/${projectName}/graph`
     );
     return response.data;
   } catch (error) {
-    console.error('Error in RAG chat:', error);
+    handleApiError(error);
     throw error;
   }
+};
+
+export const ragChat = async (
+  projectName: string,
+  query: string,
+  history: { role: string; content: string }[] | null = null,
+  model: string = "gpt-4o"
+): Promise<{
+  answer: string;
+  sources?: Array<{
+    source: string;
+    section: string;
+    preview: string;
+    page?: number;
+  }>;
+  graph_info?: {
+    concepts: number;
+    related_nodes: number;
+  };
+}> => {
+  const maxRetries = 3;
+  let retryCount = 0;
+  let lastError: Error | null = null;
+
+  while (retryCount < maxRetries) {
+    try {
+      const response = await fetch(`${API_BASE}/chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${GITHUB_TOKEN}`
+        },
+        body: JSON.stringify({
+          project_name: projectName,
+          query,
+          history,
+          model: retryCount === 0 ? model : 'gpt-4o',
+          use_graph: model === 'graph-rag' && retryCount === 0,
+          format: 'latex' // Request LaTeX formatted response
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: { message: 'Unknown error' } }));
+        throw new Error(`HTTP error! status: ${response.status} - ${errorData.error?.message || 'Unknown error'}`);
+      }
+
+      const data = await response.json();
+      
+      if (!data.answer) {
+        throw new Error('Invalid response format from server');
+      }
+
+      // Convert any plain text equations to LaTeX format
+      data.answer = convertToLatex(data.answer);
+
+      return data;
+    } catch (error) {
+      console.error(`Attempt ${retryCount + 1} failed:`, error);
+      lastError = error instanceof Error ? error : new Error(String(error));
+      
+      if (!(lastError.message.includes('500') || lastError.message.includes('Internal Server Error'))) {
+        throw lastError;
+      }
+      
+      retryCount++;
+      await new Promise(resolve => setTimeout(resolve, Math.min(1000 * Math.pow(2, retryCount), 5000)));
+    }
+  }
+
+  throw lastError || new Error('Failed to get response after multiple retries');
+};
+
+// Helper function to convert text to LaTeX format
+const convertToLatex = (text: string): string => {
+  // Convert inline math expressions
+  text = text.replace(/\$([^$]+)\$/g, (_, math) => {
+    return `\\(${math.trim()}\\)`;
+  });
+
+  // Convert block math expressions
+  text = text.replace(/\$\$([^$]+)\$\$/g, (_, math) => {
+    return `\\[${math.trim()}\\]`;
+  });
+
+  // Convert common mathematical expressions to LaTeX
+  const mathReplacements: [RegExp, string][] = [
+    [/(\d+)\^(\d+)/g, '$1^{$2}'],  // Convert powers
+    [/sqrt\(([^)]+)\)/g, '\\sqrt{$1}'],  // Convert square roots
+    [/->|→/g, '\\rightarrow'],  // Convert arrows
+    [/>=|≥/g, '\\geq'],  // Convert greater than or equal
+    [/<=|≤/g, '\\leq'],  // Convert less than or equal
+    [/!=|≠/g, '\\neq'],  // Convert not equal
+    [/inf|∞/g, '\\infty'],  // Convert infinity
+    [/pi|π/g, '\\pi'],  // Convert pi
+    [/theta|θ/g, '\\theta'],  // Convert theta
+    [/alpha|α/g, '\\alpha'],  // Convert alpha
+    [/beta|β/g, '\\beta'],  // Convert beta
+    [/gamma|γ/g, '\\gamma'],  // Convert gamma
+    [/delta|δ/g, '\\delta'],  // Convert delta
+    [/epsilon|ε/g, '\\epsilon'],  // Convert epsilon
+    [/sum/g, '\\sum'],  // Convert sum
+    [/prod/g, '\\prod'],  // Convert product
+    [/int/g, '\\int'],  // Convert integral
+  ];
+
+  mathReplacements.forEach(([pattern, replacement]) => {
+    text = text.replace(pattern, replacement);
+  });
+
+  return text;
 };
 
 export const getRagStats = async (projectName: string): Promise<RAGStats> => {
@@ -575,12 +724,51 @@ export const getRagStats = async (projectName: string): Promise<RAGStats> => {
   }
 };
 
-export const getEmbeddingsVisualization = async (projectName: string) => {
+export const getEmbeddingsVisualization = async (projectName: string): Promise<VisualizationData> => {
   try {
-    const response = await axios.get(`/api/rag/${projectName}/visualize`);
+    const response = await apiClient.get<VisualizationData>(
+      `/rag/${projectName}/visualize`
+    );
     return response.data;
   } catch (error) {
     handleApiError(error);
+    throw error;
+  }
+};
+
+const handleApiError = (error: unknown) => {
+  if (error && typeof error === 'object' && 'response' in error) {
+    const response = error.response as { status: number; data: unknown };
+    throw new Error(
+      `API Error: ${response.status} - ${JSON.stringify(response.data)}`
+    );
+  }
+  throw error;
+};
+
+export const downloadProjectAsZip = async (projectName: string): Promise<void> => {
+  try {
+    const response = await apiClient.get(`projects/${encodeURIComponent(projectName)}/download-zip`, {
+      responseType: 'blob'
+    });
+    
+    // Create a URL for the blob
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    
+    // Create a temporary link element
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `${projectName}_files.zip`);
+    
+    // Append to body, click and remove
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    // Clean up the URL
+    window.URL.revokeObjectURL(url);
+  } catch (error) {
+    console.error('Error downloading project files:', error);
     throw error;
   }
 };

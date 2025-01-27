@@ -1,8 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Maximize2, Minimize2, Bot, User, Send, Settings } from 'lucide-react';
+import { Maximize2, Minimize2, Bot, User, Send, Settings, Play } from 'lucide-react';
 import { StreamingText } from './StreamingText';
 import ReactMarkdown from 'react-markdown';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
 interface ChatTemplateProps {
   messages?: Array<{ role: 'user' | 'assistant'; content: string }>;
@@ -21,6 +23,7 @@ export function ChatTemplate({
 }: ChatTemplateProps) {
   const [input, setInput] = useState('');
   const [isFullScreen, setIsFullScreen] = useState(false);
+  const [codeOutput, setCodeOutput] = useState<{ output: string; error: string } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -43,6 +46,103 @@ export function ChatTemplate({
     setIsFullScreen(newFullScreenState);
     onFullScreenChange?.(newFullScreenState);
     document.body.style.overflow = newFullScreenState ? 'hidden' : 'auto';
+  };
+
+  const executeCode = async (code: string) => {
+    try {
+      const response = await fetch('/api/execute-code', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ code }),
+      });
+
+      const result = await response.json();
+      setCodeOutput(result);
+    } catch (error) {
+      setCodeOutput({
+        output: '',
+        error: 'Failed to execute code: ' + (error instanceof Error ? error.message : String(error))
+      });
+    }
+  };
+
+  const renderMessage = (message: { role: string; content: string }, index: number) => {
+    const codeBlocks = message.content.match(/```[\s\S]*?```/g) || [];
+    const parts = message.content.split(/```[\s\S]*?```/);
+    
+    return (
+      <motion.div
+        key={index}
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -20 }}
+        className={`flex items-start gap-4 ${
+          message.role === 'assistant' 
+            ? 'bg-gray-50 dark:bg-navy-800 rounded-xl p-6' 
+            : 'px-2'
+        }`}
+      >
+        {message.role === 'assistant' ? (
+          <div className="w-10 h-10 rounded-full bg-primary-100 dark:bg-primary-900 flex items-center justify-center flex-shrink-0">
+            <Bot className="h-6 w-6 text-primary-600 dark:text-primary-400" />
+          </div>
+        ) : (
+          <div className="w-10 h-10 rounded-full bg-primary-600 flex items-center justify-center flex-shrink-0">
+            <User className="h-6 w-6 text-white" />
+          </div>
+        )}
+        <div className="flex-1 prose prose-sm dark:prose-invert max-w-none overflow-x-auto">
+          {parts.map((part, i) => (
+            <React.Fragment key={i}>
+              <ReactMarkdown>{part}</ReactMarkdown>
+              {i < codeBlocks.length && (
+                <div className="relative">
+                  <SyntaxHighlighter
+                    language="python"
+                    style={oneDark}
+                    className="rounded-lg !mt-0"
+                  >
+                    {codeBlocks[i].replace(/```(python)?\n?/g, '')}
+                  </SyntaxHighlighter>
+                  {message.role === 'assistant' && (
+                    <button
+                      onClick={() => executeCode(codeBlocks[i].replace(/```(python)?\n?/g, ''))}
+                      className="absolute top-2 right-2 p-2 bg-primary-500 text-white rounded-lg 
+                        hover:bg-primary-600 transition-colors"
+                      title="Run code"
+                    >
+                      <Play className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+              )}
+            </React.Fragment>
+          ))}
+          {codeOutput && (
+            <div className="mt-4 space-y-2">
+              {codeOutput.output && (
+                <div className="bg-gray-100 dark:bg-navy-700 p-4 rounded-lg">
+                  <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-2">Output:</h4>
+                  <pre className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
+                    {codeOutput.output}
+                  </pre>
+                </div>
+              )}
+              {codeOutput.error && (
+                <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg">
+                  <h4 className="text-sm font-medium text-red-800 dark:text-red-400 mb-2">Error:</h4>
+                  <pre className="text-sm text-red-700 dark:text-red-300 whitespace-pre-wrap">
+                    {codeOutput.error}
+                  </pre>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </motion.div>
+    );
   };
 
   return (
@@ -103,68 +203,9 @@ export function ChatTemplate({
               </div>
             </motion.div>
           ) : (
-            messages.map((message, index) => (
-              <motion.div
-                key={index}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                className={`flex items-start gap-4 ${
-                  message.role === 'assistant' 
-                    ? 'bg-gray-50 dark:bg-navy-800 rounded-xl p-6' 
-                    : 'px-2'
-                }`}
-              >
-                {message.role === 'assistant' ? (
-                  <div className="w-10 h-10 rounded-full bg-primary-100 dark:bg-primary-900 flex items-center justify-center flex-shrink-0">
-                    <Bot className="h-6 w-6 text-primary-600 dark:text-primary-400" />
-                  </div>
-                ) : (
-                  <div className="w-10 h-10 rounded-full bg-primary-600 flex items-center justify-center flex-shrink-0">
-                    <User className="h-6 w-6 text-white" />
-                  </div>
-                )}
-                <div className="flex-1 prose prose-sm dark:prose-invert max-w-none overflow-x-auto">
-                  {message.role === 'assistant' ? (
-                    <StreamingText speed={30}>
-                      <ReactMarkdown>{message.content}</ReactMarkdown>
-                    </StreamingText>
-                  ) : (
-                    <ReactMarkdown>{message.content}</ReactMarkdown>
-                  )}
-                </div>
-              </motion.div>
-            ))
+            messages.map((message, index) => renderMessage(message, index))
           )}
         </AnimatePresence>
-        {isLoading && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="flex items-start gap-4 bg-gray-50 dark:bg-navy-800 rounded-xl p-6"
-          >
-            <div className="w-10 h-10 rounded-full bg-primary-100 dark:bg-primary-900 flex items-center justify-center">
-              <Bot className="h-6 w-6 text-primary-600 dark:text-primary-400" />
-            </div>
-            <div className="flex gap-2 items-center">
-              <motion.span
-                className="w-2 h-2 bg-primary-500 rounded-full"
-                animate={{ scale: [1, 1.2, 1] }}
-                transition={{ duration: 1, repeat: Infinity, repeatDelay: 0.2 }}
-              />
-              <motion.span
-                className="w-2 h-2 bg-primary-500 rounded-full"
-                animate={{ scale: [1, 1.2, 1] }}
-                transition={{ duration: 1, repeat: Infinity, repeatDelay: 0.4 }}
-              />
-              <motion.span
-                className="w-2 h-2 bg-primary-500 rounded-full"
-                animate={{ scale: [1, 1.2, 1] }}
-                transition={{ duration: 1, repeat: Infinity, repeatDelay: 0.6 }}
-              />
-            </div>
-          </motion.div>
-        )}
         <div ref={messagesEndRef} />
       </div>
 

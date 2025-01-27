@@ -1,1 +1,0 @@
-E /x.sc 𝑙 𝑡 -𝜔 : 𝑡 GLYPH<20> GLYPH<13> GLYPH<13> GLYPH<13> 𝑆 𝜽 ( /x.sc 𝑙 𝑡 -𝜔 : 𝑡 , /x.sc 0 𝑡 -𝜔 : 𝑡 -1 , 𝑙 ) - ∇ /x.sc 𝑙 𝑡 -𝜔 : 𝑡 log 𝑝 ( /x.sc 𝑙 𝑡 -𝜔 : 𝑡 | /x.sc 0 𝑡 -𝜔 : 𝑡 -1 ) GLYPH<13> GLYPH<13> GLYPH<13> 2 2 GLYPH<21> .

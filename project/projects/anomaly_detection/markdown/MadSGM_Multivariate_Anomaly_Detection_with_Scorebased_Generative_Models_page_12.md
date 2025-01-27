@@ -1,1 +1,0 @@
-## ACMReference Format:

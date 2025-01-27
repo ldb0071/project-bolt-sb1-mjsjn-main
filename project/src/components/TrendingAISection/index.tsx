@@ -50,9 +50,19 @@ interface Channel {
   thumbnail: string;
 }
 
+interface TrendingAISectionProps {
+  initialDomains?: Domain[];
+  onRemoveDomain?: (domainId: number) => void;
+  onUpdateMaxResults?: (domainId: number, value: number) => void;
+}
+
 const API_BASE_URL = 'http://localhost:8080';
 
-export function TrendingAISection() {
+export function TrendingAISection({ 
+  initialDomains,
+  onRemoveDomain,
+  onUpdateMaxResults 
+}: TrendingAISectionProps) {
   const defaultMaxResults = 30;
   const [articles, setArticles] = useState<Article[]>([]);
   const [videos, setVideos] = useState<Video[]>([]);
@@ -94,8 +104,7 @@ export function TrendingAISection() {
     return savedDomains ? JSON.parse(savedDomains) : [];
   });
   const [domains, setDomains] = useState<Domain[]>(() => {
-    const savedDomains = localStorage.getItem('aiTrendingDomains');
-    return savedDomains ? JSON.parse(savedDomains) : [
+    return initialDomains || [
       { id: 1, name: 'Dev.to - AI', url: 'https://dev.to/api/articles', type: 'dev.to', tag: 'ai', maxResults: defaultMaxResults },
       { id: 2, name: 'Dev.to - Computer Vision', url: 'https://dev.to/api/articles', type: 'dev.to', tag: 'computer-vision', maxResults: defaultMaxResults },
       { id: 3, name: 'Dev.to - LLMs', url: 'https://dev.to/api/articles', type: 'dev.to', tag: 'llm', maxResults: defaultMaxResults },
@@ -150,6 +159,15 @@ export function TrendingAISection() {
   });
 
   useEffect(() => {
+    if (initialDomains) {
+      setDomains(initialDomains);
+      if (!initialDomains.find(d => d.id === selectedDomain.id) && initialDomains.length > 0) {
+        setSelectedDomain(initialDomains[0]);
+      }
+    }
+  }, [initialDomains]);
+
+  useEffect(() => {
     localStorage.setItem('aiTrendingDomains', JSON.stringify(domains));
   }, [domains]);
 
@@ -199,16 +217,24 @@ export function TrendingAISection() {
   };
 
   const handleRemoveDomain = (domainId: number) => {
-    setDomains(domains.filter(d => d.id !== domainId));
-    if (selectedDomain.id === domainId) {
+    if (onRemoveDomain) {
+      onRemoveDomain(domainId);
+    } else {
+      setDomains(domains.filter(d => d.id !== domainId));
+    }
+    if (selectedDomain.id === domainId && domains.length > 1) {
       setSelectedDomain(domains[0]);
     }
   };
 
   const handleUpdateMaxResults = (domainId: number, value: number) => {
-    setDomains(domains.map(d => 
-      d.id === domainId ? { ...d, maxResults: value } : d
-    ));
+    if (onUpdateMaxResults) {
+      onUpdateMaxResults(domainId, value);
+    } else {
+      setDomains(domains.map(d => 
+        d.id === domainId ? { ...d, maxResults: value } : d
+      ));
+    }
   };
 
   const parseMediumArticle = (item: any): Article => {

@@ -1,1 +1,0 @@
-## 3.2 Score Network for Time-series Anomaly Detection

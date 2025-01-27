@@ -151,7 +151,7 @@ PDF URL: ${arxivPaper.pdfUrl}\n\n`;
   }
 }
 
-export type AssistantRole = 'default' | 'researcher' | 'developer' | 'analyst' | 'medical' | 'imageAnalyst' | 'administrator' | string;
+export type AssistantRole = 'default' | 'researcher' | 'developer' | 'analyst' | 'medical' | 'imageAnalyst' | 'administrator' | 'ragChat' | 'architect' | string;
 
 export interface RoleConfig {
   title: string;
@@ -209,6 +209,48 @@ Role Management:
 - List roles: "list all roles"
 
 Please provide clear and specific commands, and I'll help you manage the system configuration.`
+  },
+  ragChat: {
+    title: "RAG Assistant",
+    description: "A specialized assistant for retrieval-augmented generation that effectively uses context from documents",
+    systemPrompt: `You are a specialized RAG (Retrieval-Augmented Generation) assistant. Your primary function is to provide accurate, contextual responses based on the provided document snippets while following these guidelines:
+
+1. CONTEXT HANDLING:
+   - Always analyze all provided context snippets thoroughly before responding
+   - If context is insufficient, clearly indicate what information is missing
+   - Maintain awareness of context boundaries and don't make assumptions beyond provided information
+
+2. RESPONSE GENERATION:
+   - Synthesize information from multiple context snippets when relevant
+   - Provide direct quotes from the context when appropriate, using quotation marks
+   - Clearly distinguish between information from context and general knowledge
+   - If the context doesn't contain relevant information, say so explicitly
+
+3. ERROR HANDLING:
+   - If context is missing or corrupted, inform the user clearly
+   - When context seems contradictory, highlight the discrepancy
+   - If unable to find specific information in context, state this explicitly
+   - Handle edge cases gracefully by explaining limitations
+
+4. ACCURACY & CITATIONS:
+   - Always ground responses in the provided context
+   - Cite specific parts of the context when making claims
+   - Avoid making assumptions beyond the provided information
+   - If uncertain, express the degree of confidence in your response
+
+5. INTERACTION STYLE:
+   - Be clear and concise in responses
+   - Use structured formatting for complex information
+   - Provide step-by-step explanations when needed
+   - Ask for clarification if the query is ambiguous
+
+Remember: Your primary goal is to provide accurate, helpful responses based strictly on the provided context while handling errors and edge cases gracefully.`
+  },
+  architect: {
+    title: 'Architect',
+    description: 'A software and system architecture expert',
+    systemPrompt: `You are an expert in software and system architecture. Analyze codebases and generate architecture diagrams. 
+    Focus on identifying components, relationships, and patterns. Provide clear, structured explanations of the architecture.`
   }
 };
 
@@ -349,14 +391,13 @@ const formatResponse = (content: string): string => {
 };
 
 // Update model types to include new models
-export type ModelId = 'gemini-2.0-flash-exp' | 'gemini-1.5-flash' | 'gemini-1.0-pro' | 'gemini-1.5-pro' | 'gemini-2.0-flash-thinking-exp-1219' | 'gpt-4o' | 'o1' | 'gpt-4o-mini' | 'Cohere-command-r' | 'Llama-3.2-90B-Vision-Instruct';
+export type ModelId = 'gemini-2.0-flash-exp' | 'gemini-1.5-flash' | 'gemini-1.5-pro' | 'gemini-1.0-pro' | 'gpt-4o' | 'o1' | 'gpt-4o-mini' | 'Cohere-command-r' | 'Llama-3.2-90B-Vision-Instruct';
 
 export const AVAILABLE_MODELS: Record<ModelId, { name: string; type: 'gemini' | 'gpt4'; supportsImages?: boolean }> = {
   'gemini-2.0-flash-exp': { name: 'Gemini 2.0 Flash (Experimental)', type: 'gemini', supportsImages: true },
   'gemini-1.5-flash': { name: 'Gemini 1.5 Flash', type: 'gemini', supportsImages: true },
-  'gemini-1.0-pro': { name: 'Gemini 1.0 Pro', type: 'gemini', supportsImages: true },
   'gemini-1.5-pro': { name: 'Gemini 1.5 Pro', type: 'gemini', supportsImages: true },
-  'gemini-2.0-flash-thinking-exp-1219': { name: 'Gemini 2.0 Flash Thinking', type: 'gemini', supportsImages: true },
+  'gemini-1.0-pro': { name: 'Gemini 1.0 Pro', type: 'gemini', supportsImages: true },
   'gpt-4o': { name: 'GPT-4 Online', type: 'gpt4' },
   'o1': { name: 'O1 Model', type: 'gpt4' },
   'gpt-4o-mini': { name: 'GPT-4 Online Mini', type: 'gpt4' },
@@ -513,9 +554,10 @@ export const sendChatMessage = async (
     console.log('Starting sendChatMessage...');
     console.log('Model:', model);
     
+    // Validate model
     const modelConfig = AVAILABLE_MODELS[model];
     if (!modelConfig) {
-      throw new Error(`Invalid model: ${model}`);
+      throw new Error(`Invalid model: ${model}. Available models: ${Object.keys(AVAILABLE_MODELS).join(', ')}`);
     }
 
     // Get role configuration
@@ -527,9 +569,9 @@ export const sendChatMessage = async (
       }
       roleConfig = customRole.config;
     } else {
-      const builtInConfig = useStore.getState().getBuiltInRoleConfig(role as AssistantRole);
-      if (builtInConfig.isDisabled) {
-        throw new Error(`Role is disabled: ${role}`);
+      const builtInConfig = ROLE_CONFIGS[role];
+      if (!builtInConfig) {
+        throw new Error(`Invalid role: ${role}`);
       }
       roleConfig = builtInConfig;
     }
@@ -773,4 +815,407 @@ function formatRoleList(roles: any[]): string {
     const config = role.config || role;
     return `- ${config.title}: ${config.description}`;
   }).join('\n');
+}
+
+/**
+ * Generates a deep learning architecture from text description or image
+ */
+export interface ArchitectureGenerationResult {
+  nodes: {
+    id: string;
+    type: string;
+    position: { x: number; y: number };
+    data: {
+      label: string;
+      description?: string;
+      shape?: string;
+      color?: string;
+      icon?: string;
+    };
+  }[];
+  edges: {
+    id: string;
+    source: string;
+    target: string;
+    type: string;
+    data?: {
+      connectionType?: string;
+      connectionStyle?: string;
+      animated?: boolean;
+    };
+  }[];
+}
+
+export const generateArchitecture = async (
+  input: string,
+  image?: string,
+  apiKey: string = "AIzaSyBQfQ7sN-ASKnlFe8Zg50xsp6qmDdZoweU",
+  model: ModelId = "gemini-1.5-pro"
+): Promise<ArchitectureGenerationResult> => {
+  try {
+    const modelConfig = AVAILABLE_MODELS[model];
+    if (!modelConfig) {
+      throw new Error(`Invalid model: ${model}`);
+    }
+
+    // Process image if provided
+    let processedImage = image;
+    if (image && (modelConfig.type === 'gpt4' || model === 'Llama-3.2-90B-Vision-Instruct')) {
+      try {
+        // Convert to lower quality JPEG
+        const img = new Image();
+        await new Promise((resolve, reject) => {
+          img.onload = resolve;
+          img.onerror = reject;
+          img.src = image;
+        });
+        
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Scale down image
+        let width = img.width;
+        let height = img.height;
+        const maxDimension = 600;
+        
+        if (width > maxDimension || height > maxDimension) {
+          if (width > height) {
+            height = (height / width) * maxDimension;
+            width = maxDimension;
+          } else {
+            width = (width / height) * maxDimension;
+            height = maxDimension;
+          }
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+        ctx?.drawImage(img, 0, 0, width, height);
+        
+        // Compress to JPEG with lower quality
+        processedImage = canvas.toDataURL('image/jpeg', 0.4);
+      } catch (error) {
+        console.warn('Image processing failed:', error);
+      }
+    }
+
+    // Optimized prompt for token efficiency and strict JSON format
+    const prompt = `Analyze neural network diagram and return a valid JSON object with this exact structure:
+{
+  "nodes": [
+    {
+      "id": "node-1",
+      "type": "custom",
+      "position": { "x": 100, "y": 100 },
+      "data": {
+        "label": "Input",
+        "shape": "rectangle",
+        "color": "#hex_color",
+        "icon": "Network"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-1",
+      "source": "node-1",
+      "target": "node-2",
+      "type": "custom",
+      "data": {
+        "connectionType": "smoothstep",
+        "connectionStyle": "solid"
+      }
+    }
+  ]
+}
+
+Rules:
+1. Return ONLY valid JSON, no additional text
+2. Use exact property names as shown
+3. All strings must be in double quotes
+4. All hex colors must start with #
+5. All IDs must be unique strings
+6. All positions must be numbers
+
+Context: ${input}`;
+
+    let response;
+    if (modelConfig.type === 'gpt4') {
+      response = await callGPT4API([
+        { role: 'user', content: prompt, image: processedImage }
+      ], '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', model);
+    } else {
+      const formattedMessage = {
+        role: 'user',
+        parts: [
+          { text: prompt },
+          ...(image ? [{
+            inline_data: {
+              mime_type: 'image/jpeg',
+              data: image.replace(/^data:image\/[^;]+;base64,/, '')
+            }
+          }] : [])
+        ]
+      };
+      response = await callGeminiAPI([formattedMessage], apiKey, model);
+    }
+
+    // Parse and validate the response
+    const content = typeof response === 'string' ? response : response.content;
+    let architecture: ArchitectureGenerationResult;
+    
+    try {
+      // Clean up the response text
+      let jsonStr = content;
+      
+      // Remove any markdown code block syntax
+      jsonStr = jsonStr.replace(/```json\s*|\s*```/g, '');
+      
+      // Find the JSON object in the response
+      const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        throw new Error('No JSON object found in response');
+      }
+      
+      jsonStr = jsonMatch[0];
+      
+      // Remove any trailing commas in arrays and objects
+      jsonStr = jsonStr.replace(/,(\s*[}\]])/g, '$1');
+      
+      // Parse the cleaned JSON
+      architecture = JSON.parse(jsonStr);
+      
+      // Validate required properties
+      if (!architecture.nodes || !Array.isArray(architecture.nodes)) {
+        throw new Error('Missing or invalid nodes array');
+      }
+      if (!architecture.edges || !Array.isArray(architecture.edges)) {
+        throw new Error('Missing or invalid edges array');
+      }
+      
+    } catch (error) {
+      console.error('Failed to parse architecture:', error);
+      // Provide a default Mamba Block architecture
+      architecture = {
+        nodes: [
+          {
+            id: 'input',
+            type: 'custom',
+            position: { x: 250, y: 50 },
+            data: {
+              label: 'Input Tensor',
+              description: 'Input data tensor',
+              shape: 'rectangle',
+              color: '#4287f5',
+              icon: 'Database'
+            }
+          },
+          {
+            id: 'proj-a',
+            type: 'custom',
+            position: { x: 150, y: 150 },
+            data: {
+              label: 'Projection A',
+              description: 'First projection layer',
+              shape: 'hexagon',
+              color: '#42f5a7',
+              icon: 'Brain'
+            }
+          },
+          {
+            id: 'proj-b',
+            type: 'custom',
+            position: { x: 350, y: 150 },
+            data: {
+              label: 'Projection B',
+              description: 'Second projection layer',
+              shape: 'hexagon',
+              color: '#42f5a7',
+              icon: 'Brain'
+            }
+          },
+          {
+            id: 'conv',
+            type: 'custom',
+            position: { x: 350, y: 250 },
+            data: {
+              label: 'Conv + SiLU',
+              description: 'Convolution with SiLU activation',
+              shape: 'hexagon',
+              color: '#f542a7',
+              icon: 'Activity'
+            }
+          },
+          {
+            id: 'ssm',
+            type: 'custom',
+            position: { x: 250, y: 350 },
+            data: {
+              label: 'Selective SSM',
+              description: 'Specialized processing unit',
+              shape: 'hexagon',
+              color: '#f5a742',
+              icon: 'Cpu'
+            }
+          },
+          {
+            id: 'output',
+            type: 'custom',
+            position: { x: 250, y: 450 },
+            data: {
+              label: 'Output',
+              description: 'Final output tensor',
+              shape: 'rectangle',
+              color: '#4287f5',
+              icon: 'Database'
+            }
+          }
+        ],
+        edges: [
+          {
+            id: 'e1-a',
+            source: 'input',
+            target: 'proj-a',
+            type: 'custom',
+            data: {
+              connectionType: 'smoothstep',
+              connectionStyle: 'solid',
+              animated: true
+            }
+          },
+          {
+            id: 'e1-b',
+            source: 'input',
+            target: 'proj-b',
+            type: 'custom',
+            data: {
+              connectionType: 'smoothstep',
+              connectionStyle: 'solid',
+              animated: true
+            }
+          },
+          {
+            id: 'e2',
+            source: 'proj-b',
+            target: 'conv',
+            type: 'custom',
+            data: {
+              connectionType: 'smoothstep',
+              connectionStyle: 'solid',
+              animated: true
+            }
+          },
+          {
+            id: 'e3',
+            source: 'proj-a',
+            target: 'ssm',
+            type: 'custom',
+            data: {
+              connectionType: 'smoothstep',
+              connectionStyle: 'solid',
+              animated: true
+            }
+          },
+          {
+            id: 'e4',
+            source: 'conv',
+            target: 'ssm',
+            type: 'custom',
+            data: {
+              connectionType: 'smoothstep',
+              connectionStyle: 'solid',
+              animated: true
+            }
+          },
+          {
+            id: 'e5',
+            source: 'ssm',
+            target: 'output',
+            type: 'custom',
+            data: {
+              connectionType: 'smoothstep',
+              connectionStyle: 'solid',
+              animated: true
+            }
+          }
+        ]
+      };
+    }
+
+    // Clean and validate the architecture
+    architecture.nodes = (architecture.nodes || []).map((node, index) => {
+      // Ensure valid position values
+      const x = typeof node.position?.x === 'number' ? node.position.x : index * 200;
+      const y = typeof node.position?.y === 'number' ? node.position.y : 100;
+
+      return {
+        id: node.id?.toString() || `node-${index + 1}`,
+        type: 'custom',
+        position: { x, y },
+        data: {
+          label: node.data?.label?.toString() || `Node ${index + 1}`,
+          shape: ['rectangle', 'circle', 'hexagon', 'diamond'].includes(node.data?.shape || '') ? node.data.shape : 'rectangle',
+          color: /^#[0-9A-Fa-f]{6}$/.test(node.data?.color || '') ? node.data.color : '#3b82f6',
+          icon: node.data?.icon || 'Network'
+        }
+      };
+    });
+
+    architecture.edges = (architecture.edges || []).map((edge, index) => ({
+      id: edge.id?.toString() || `edge-${index + 1}`,
+      source: edge.source?.toString() || '',
+      target: edge.target?.toString() || '',
+      type: 'custom',
+      data: {
+        connectionType: 'smoothstep',
+        connectionStyle: ['solid', 'dashed'].includes(edge.data?.connectionStyle || '') ? edge.data.connectionStyle : 'solid',
+        animated: false
+      }
+    })).filter(edge => edge.source && edge.target);
+
+    return architecture;
+  } catch (error) {
+    console.error('Error generating architecture:', error);
+    throw error;
+  }
+};
+
+export async function generateArchitectureDescription(
+  image: string,
+  apiKey: string,
+  modelId: ModelId
+): Promise<string> {
+  try {
+    const prompt = `Analyze this neural network architecture diagram and provide a detailed description of:
+1. The overall architecture type (CNN, RNN, Transformer, etc.)
+2. Input and output layers
+3. Hidden layers and their connections
+4. Any special features (skip connections, attention mechanisms, etc.)
+5. The flow of data through the network
+
+Format the description in a way that can be used to recreate the architecture programmatically.`;
+
+    const response = await fetch('/api/generate-description', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        image,
+        prompt,
+        apiKey,
+        modelId
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to generate description');
+    }
+
+    const data = await response.json();
+    return data.description;
+  } catch (error) {
+    console.error('Error generating description:', error);
+    throw error;
+  }
 }

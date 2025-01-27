@@ -8,6 +8,9 @@ import { SettingsPage } from './pages/SettingsPage';
 import { GettingStartedPage } from './pages/GettingStartedPage';
 import { TrendingAIPage } from './pages/TrendingAIPage';
 import { RAGChatPage } from './pages/RAGChatPage';
+import { CodeSnippetsPage } from './pages/CodeSnippetsPage';
+import { TodoPlannerPage } from './pages/TodoPlannerPage';
+import { DeepLearningFlowPage } from './pages/DeepLearningFlowPage';
 import Box from '@mui/material/Box';
 
 function App() {
@@ -35,6 +38,9 @@ function App() {
                   <Route path="/settings" element={<SettingsPage />} />
                   <Route path="/trending" element={<TrendingAIPage />} />
                   <Route path="/rag-chat" element={<RAGChatPage />} />
+                  <Route path="/code-snippets" element={<CodeSnippetsPage />} />
+                  <Route path="/todo-planner" element={<TodoPlannerPage />} />
+                  <Route path="/deep-learning-flow" element={<DeepLearningFlowPage />} />
                   <Route path="/" element={<Navigate to="/projects" replace />} />
                 </Routes>
               </Layout>

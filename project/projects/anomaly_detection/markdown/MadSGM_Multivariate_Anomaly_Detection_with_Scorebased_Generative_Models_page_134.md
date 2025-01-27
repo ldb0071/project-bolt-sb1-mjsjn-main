@@ -1,1 +1,0 @@
-Figure 5: Examples of anomalies that are not detectable by one or two of the three anomaly measurements but by another. Red and green indicate true anomalies and estimated anomalies based on anomaly measurements, respectively. Blue dashed lines represent thresholds of anomaly measurements to detect anomalous observations.

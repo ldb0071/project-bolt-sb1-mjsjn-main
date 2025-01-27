@@ -1,1 +1,0 @@
-## 3.3 Training and Sampling Methods

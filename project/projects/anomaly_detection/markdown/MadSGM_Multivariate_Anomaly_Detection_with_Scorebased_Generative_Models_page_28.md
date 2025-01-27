@@ -1,1 +1,0 @@
-task: i) reconstruction-based, ii) density-based, and iii) boundarybased methods. Each method is characterized by the assumption about the characteristics of anomalies.

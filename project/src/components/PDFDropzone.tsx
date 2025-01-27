@@ -9,7 +9,7 @@ interface PDFDropzoneProps {
   className?: string;
 }
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_FILE_SIZE = 30 * 1024 * 1024; // 10MB
 
 export function PDFDropzone({ onFilesDrop, mode = 'drag-drop', className = '' }: PDFDropzoneProps) {
   const { getRootProps, getInputProps, isDragActive, fileRejections, isFocused } = useDropzone({

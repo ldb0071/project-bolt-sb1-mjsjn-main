@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageSquare, RefreshCw, FileText, X, ChevronRight, Image as ImageIcon, Send } from 'lucide-react';
+import { MessageSquare, RefreshCw, FileText, X, ChevronRight, Image as ImageIcon, Send, StickyNote } from 'lucide-react';
 import axios from 'axios';
 
 interface PopupPosition {
@@ -12,6 +12,7 @@ interface TextSelectionPopupProps {
   selectedText: string;
   position: PopupPosition;
   onClose: () => void;
+  onAddNote: (noteText: string) => void;
 }
 
 interface ChatMessage {
@@ -21,7 +22,7 @@ interface ChatMessage {
   image?: string;
 }
 
-type ActionType = 'explain' | 'summarize' | 'rewrite';
+type ActionType = 'explain' | 'summarize' | 'rewrite' | 'note';
 
 const API_BASE = 'http://localhost:8080';
 
@@ -66,6 +67,7 @@ export const TextSelectionPopup: React.FC<TextSelectionPopupProps> = ({
   selectedText,
   position,
   onClose,
+  onAddNote,
 }) => {
   const [showChat, setShowChat] = useState(false);
   const [action, setAction] = useState<ActionType>('explain');
@@ -74,6 +76,7 @@ export const TextSelectionPopup: React.FC<TextSelectionPopupProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [inputMessage, setInputMessage] = useState('');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [noteText, setNoteText] = useState('');
   const chatRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -112,6 +115,13 @@ export const TextSelectionPopup: React.FC<TextSelectionPopupProps> = ({
 
   const handleSendMessage = async () => {
     if (!inputMessage.trim() && !selectedImage) return;
+
+    if (action === 'note') {
+      onAddNote(inputMessage);
+      setShowChat(false);
+      onClose();
+      return;
+    }
 
     const userMessage: ChatMessage = {
       role: 'user',
@@ -156,6 +166,16 @@ export const TextSelectionPopup: React.FC<TextSelectionPopupProps> = ({
     e.stopPropagation();
     e.preventDefault();
     
+    if (type === 'note') {
+      setShowChat(true);
+      setAction(type);
+      setMessages([
+        { role: 'user', content: 'Add a note for the selected text:' },
+        { role: 'assistant', content: 'Enter your note below:' }
+      ]);
+      return;
+    }
+
     console.log('Action triggered:', {
       type,
       selectedText,
@@ -214,6 +234,8 @@ export const TextSelectionPopup: React.FC<TextSelectionPopupProps> = ({
         return <FileText size={16} />;
       case 'rewrite':
         return <RefreshCw size={16} />;
+      case 'note':
+        return <StickyNote size={16} />;
       default:
         return <MessageSquare size={16} />;
     }
@@ -276,7 +298,7 @@ export const TextSelectionPopup: React.FC<TextSelectionPopupProps> = ({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center space-x-1 p-1">
-          {(['explain', 'summarize', 'rewrite'] as const).map((type) => (
+          {(['explain', 'summarize', 'rewrite', 'note'] as const).map((type) => (
             <button
               key={type}
               onClick={(e) => {
@@ -286,7 +308,7 @@ export const TextSelectionPopup: React.FC<TextSelectionPopupProps> = ({
               className="flex items-center space-x-2 px-3 py-1.5 hover:bg-navy-700 rounded-md text-white text-sm"
             >
               {getActionIcon(type)}
-              <span>{getActionTitle(type)}</span>
+              <span>{type === 'note' ? 'Add Note' : type.charAt(0).toUpperCase() + type.slice(1)}</span>
             </button>
           ))}
         </div>
@@ -320,7 +342,9 @@ export const TextSelectionPopup: React.FC<TextSelectionPopupProps> = ({
                 {/* Header */}
                 <div className="border-b border-navy-700">
                   <div className="flex items-center justify-between px-4 py-3">
-                    <h3 className="text-lg font-semibold text-white">AI Assistant</h3>
+                    <h3 className="text-lg font-semibold text-white">
+                      {action === 'note' ? 'Add Note' : 'AI Assistant'}
+                    </h3>
                     <button
                       onClick={handleClose}
                       className="p-1 hover:bg-navy-700 rounded-lg text-gray-400 hover:text-white"
@@ -328,22 +352,24 @@ export const TextSelectionPopup: React.FC<TextSelectionPopupProps> = ({
                       <X size={20} />
                     </button>
                   </div>
-                  <div className="flex px-4 space-x-4">
-                    {(['explain', 'summarize', 'rewrite'] as const).map((type) => (
-                      <button
-                        key={type}
-                        onClick={handleTabClick(type)}
-                        className={`flex items-center space-x-2 px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
-                          action === type
-                            ? 'text-primary-400 border-primary-400'
-                            : 'text-gray-400 border-transparent hover:text-gray-300 hover:border-gray-700'
-                        }`}
-                      >
-                        {getActionIcon(type)}
-                        <span>{getActionTitle(type)}</span>
-                      </button>
-                    ))}
-                  </div>
+                  {action !== 'note' && (
+                    <div className="flex px-4 space-x-4">
+                      {(['explain', 'summarize', 'rewrite'] as const).map((type) => (
+                        <button
+                          key={type}
+                          onClick={handleTabClick(type)}
+                          className={`flex items-center space-x-2 px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
+                            action === type
+                              ? 'text-primary-400 border-primary-400'
+                              : 'text-gray-400 border-transparent hover:text-gray-300 hover:border-gray-700'
+                          }`}
+                        >
+                          {getActionIcon(type)}
+                          <span>{getActionTitle(type)}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {/* Chat Messages */}
@@ -352,111 +378,78 @@ export const TextSelectionPopup: React.FC<TextSelectionPopupProps> = ({
                     <div className="text-sm text-gray-400">Selected text:</div>
                     <div className="mt-1 text-white">{selectedText}</div>
                   </div>
-                  <div className="p-4 space-y-4">
-                    {error && (
-                      <div className="bg-red-900/50 text-red-400 p-4 rounded-lg">
-                        {error}
-                      </div>
-                    )}
-                    {messages.map((message, index) => (
-                      <div key={index} className="space-y-2">
-                        <div className="flex items-center space-x-2 text-sm text-gray-400">
-                          <span>{message.role === 'user' ? 'You' : 'Response'}</span>
-                          {message.role === 'assistant' && (
-                            <>
-                              <ChevronRight size={16} />
-                              <span>{action?.charAt(0).toUpperCase() + action?.slice(1)}</span>
-                            </>
-                          )}
+                  {action !== 'note' && (
+                    <div className="p-4 space-y-4">
+                      {error && (
+                        <div className="bg-red-900/50 text-red-400 p-4 rounded-lg">
+                          {error}
                         </div>
-                        <div className={`rounded-lg p-4 ${
-                          message.role === 'user' 
-                            ? 'bg-navy-700 text-white' 
-                            : 'bg-navy-800 text-white'
-                        }`}>
-                          {message.image && (
-                            <div className="mb-2">
-                              <img 
-                                src={message.image} 
-                                alt="User uploaded" 
-                                className="max-w-full rounded-lg"
-                              />
-                            </div>
-                          )}
-                          {message.content}
+                      )}
+                      {messages.map((message, index) => (
+                        <div key={index} className="space-y-2">
+                          <div className="flex items-center space-x-2 text-sm text-gray-400">
+                            <span>{message.role === 'user' ? 'You' : 'Response'}</span>
+                            {message.role === 'assistant' && (
+                              <>
+                                <ChevronRight size={16} />
+                                <span>{action?.charAt(0).toUpperCase() + action?.slice(1)}</span>
+                              </>
+                            )}
+                          </div>
+                          <div className={`rounded-lg p-4 ${
+                            message.role === 'user' 
+                              ? 'bg-navy-700 text-white' 
+                              : 'bg-navy-800 text-white'
+                          }`}>
+                            {message.image && (
+                              <div className="mb-2">
+                                <img 
+                                  src={message.image} 
+                                  alt="User uploaded" 
+                                  className="max-w-full rounded-lg"
+                                />
+                              </div>
+                            )}
+                            {message.content}
+                          </div>
                         </div>
-                      </div>
-                    ))}
-                    {isLoading && (
-                      <div className="flex justify-center py-4">
-                        <div className="animate-pulse text-primary-400">
-                          Processing...
+                      ))}
+                      {isLoading && (
+                        <div className="flex justify-center py-4">
+                          <div className="animate-pulse text-primary-400">
+                            Processing...
+                          </div>
                         </div>
-                      </div>
-                    )}
-                    <div ref={messagesEndRef} />
-                  </div>
+                      )}
+                      <div ref={messagesEndRef} />
+                    </div>
+                  )}
                 </div>
 
                 {/* Chat Input */}
                 <div className="border-t border-navy-700 p-4">
                   <div className="space-y-4">
-                    {selectedImage && (
-                      <div className="relative">
-                        <img 
-                          src={selectedImage} 
-                          alt="Selected" 
-                          className="max-h-32 rounded-lg"
-                        />
-                        <button
-                          onClick={() => setSelectedImage(null)}
-                          className="absolute top-1 right-1 p-1 bg-navy-800 rounded-full text-white hover:bg-navy-700"
-                        >
-                          <X size={16} />
-                        </button>
-                      </div>
-                    )}
-                    <div className="flex space-x-2">
-                      <textarea
-                        value={inputMessage}
-                        onChange={(e) => setInputMessage(e.target.value)}
-                        onKeyPress={handleKeyPress}
-                        placeholder="Type your message..."
-                        className="flex-1 bg-navy-800 text-white rounded-lg p-3 min-h-[2.5rem] max-h-32 resize-y"
-                        style={{ lineHeight: '1.5rem' }}
-                      />
-                      <div className="flex flex-col space-y-2">
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={handleImageSelect}
-                          ref={fileInputRef}
-                          className="hidden"
-                        />
-                        <button
-                          onClick={() => {
-                            if (fileInputRef.current) {
-                              fileInputRef.current.click();
-                            }
-                          }}
-                          className="p-2 bg-navy-800 text-white rounded-lg hover:bg-navy-700"
-                          type="button"
-                        >
-                          <ImageIcon size={20} />
-                        </button>
-                        <button
-                          onClick={handleSendMessage}
-                          disabled={isLoading || (!inputMessage.trim() && !selectedImage)}
-                          className={`p-2 rounded-lg ${
-                            isLoading || (!inputMessage.trim() && !selectedImage)
-                              ? 'bg-navy-700 text-gray-500 cursor-not-allowed'
-                              : 'bg-primary-500 text-white hover:bg-primary-600'
-                          }`}
-                          type="button"
-                        >
-                          <Send size={20} />
-                        </button>
-                      </div>
+                    <textarea
+                      value={inputMessage}
+                      onChange={(e) => setInputMessage(e.target.value)}
+                      onKeyPress={handleKeyPress}
+                      placeholder={action === 'note' ? "Write your note here..." : "Type your message..."}
+                      className="w-full bg-navy-800 text-white rounded-lg p-3 min-h-[100px] resize-y"
+                      style={{ lineHeight: '1.5rem' }}
+                    />
+                    <div className="flex justify-end space-x-2">
+                      <button
+                        onClick={handleSendMessage}
+                        disabled={isLoading || !inputMessage.trim()}
+                        className={`px-4 py-2 rounded-lg flex items-center space-x-2 ${
+                          isLoading || !inputMessage.trim()
+                            ? 'bg-navy-700 text-gray-500 cursor-not-allowed'
+                            : 'bg-primary-500 text-white hover:bg-primary-600'
+                        }`}
+                      >
+                        <span>{action === 'note' ? 'Save Note' : 'Send'}</span>
+                        <Send size={16} />
+                      </button>
                     </div>
                   </div>
                 </div>

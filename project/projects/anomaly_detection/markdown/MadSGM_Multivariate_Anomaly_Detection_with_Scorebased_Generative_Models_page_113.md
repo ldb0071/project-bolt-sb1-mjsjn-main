@@ -1,1 +1,0 @@
-We used /five benchmark datasets for time-series anomaly detection in our experiments. The characteristics of datasets, including their data dimensions, the numbers of train and test samples, and anomaly ratios are summarized in Table 3. We brie/fly introduce them in the following:

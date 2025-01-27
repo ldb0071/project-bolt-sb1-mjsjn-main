@@ -1,12 +1,33 @@
 {
-  "dependencies": {
-    "@headlessui/react": "^2.2.0",
-    "@types/dompurify": "^3.0.5",
-    "axios": "^1.6.2",
-    "dompurify": "^3.2.2",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "react-markdown": "^9.0.3",
-    "remark-gfm": "^4.0.0"
-  }
+    "dependencies": {
+        "@headlessui/react": "^2.2.0",
+        "@react-pdf/renderer": "^4.1.6",
+        "@tiptap/core": "^2.11.2",
+        "@tiptap/extension-image": "^2.11.2",
+        "@tiptap/extension-table": "^2.11.2",
+        "@tiptap/extension-table-cell": "^2.11.2",
+        "@tiptap/extension-table-header": "^2.11.2",
+        "@tiptap/extension-table-row": "^2.11.2",
+        "@tiptap/pm": "^2.11.2",
+        "@types/dompurify": "^3.0.5",
+        "@types/katex": "^0.16.7",
+        "@types/plotly.js": "^2.35.2",
+        "@types/react-beautiful-dnd": "^13.1.8",
+        "@xyflow/react": "^12.3.6",
+        "axios": "^1.6.2",
+        "dompurify": "^3.2.2",
+        "html2canvas": "^1.4.1",
+        "jspdf": "^2.5.2",
+        "katex": "^0.16.21",
+        "mermaid": "^11.4.1",
+        "plotly.js-dist": "^2.35.3",
+        "react": "^18.2.0",
+        "react-beautiful-dnd": "^13.1.1",
+        "react-dom": "^18.2.0",
+        "react-markdown": "^8.0.7",
+        "reactflow": "^11.11.4",
+        "remark-gfm": "^4.0.0",
+        "tiptap-extension-resizable": "^1.1.1",
+        "tiptap-extension-resize-image": "^1.2.1"
+    }
 }

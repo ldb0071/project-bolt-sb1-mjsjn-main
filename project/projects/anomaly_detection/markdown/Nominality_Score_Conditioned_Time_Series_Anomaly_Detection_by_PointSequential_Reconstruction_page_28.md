@@ -1,7 +1,0 @@
-## D The Point-adjusted Best F1 Score
-
-Analogous to F1 ∗ , the point-adjusted best F1 score ( F1 ∗ PA ) corresponds to F1 ∗ calculated after pointadjustment. Table 5 shows the F1 ∗ and F1 ∗ PA of different algorithms, including NPSR, applied to several datasets. We did not show the results for the trimSyn dataset with point-adjustment. However, by applying NPSR and the same setting as without using point-adjust, we can achieve F1 ∗ PA = 1 within the first few epochs. This indicates the point with the highest anomaly score lies within the single anomaly segment.
-
-The results suggest that F1 ∗ PA may not be reliable - on the SWaT, WADI, PSM, and MSL datasets, simple heuristic approaches (e.g. using the mean squared value of an input time point as the anomaly score) outperform all deep learning methods when evaluated using F1 ∗ PA . Moreover, optimizing on F1 ∗ PA does not necessarily guarantee a higher F1 ∗ . NPSR is optimized on F1 ∗ by tuning the algorithm-specific parameters (e.g. d ) and general parameters. To additionally optimize on F1 ∗ PA , we simply added spikes to the induced anomaly score ( ˆ A spike ( · ) ) with value ∞ for some fixed interval s . The results show that ˆ A spike ( · ) can also achieve competitive F1 ∗ PA values.
-
-Table 5: Point-adjusted best F1 score ( F1 ∗ PA ) and best F1 score ( F1 ∗ ) results on several datasets, with bold text denoting the highest and underlined text denoting the second highest value. The deep learning methods are sorted with older methods at the top and newer ones at the bottom.

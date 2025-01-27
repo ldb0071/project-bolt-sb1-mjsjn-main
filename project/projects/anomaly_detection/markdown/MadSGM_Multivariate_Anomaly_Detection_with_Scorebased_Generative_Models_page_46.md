@@ -1,1 +1,0 @@
-where ∇ x log 𝑝 𝑙 ( x ) can be replaced by 𝑆 𝜽 ( x 𝑙 , 𝑙 ) . [7] proved that one can compute the exact log-likelihood of x 0 from the formula:

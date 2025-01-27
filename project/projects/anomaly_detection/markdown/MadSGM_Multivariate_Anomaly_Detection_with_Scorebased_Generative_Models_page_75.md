@@ -1,1 +1,0 @@
-## 3.4 Naïve Anomaly measurement De/finitions

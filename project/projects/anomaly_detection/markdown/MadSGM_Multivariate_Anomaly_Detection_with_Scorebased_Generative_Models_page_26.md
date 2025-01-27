@@ -1,1 +1,0 @@
-Table 1: Comparison among various methods, including MadSGM, in terms of the detection method. We point out that none of the baselines consider multiple criterion.

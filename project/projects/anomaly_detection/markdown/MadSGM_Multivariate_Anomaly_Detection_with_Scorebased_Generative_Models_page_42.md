@@ -1,1 +1,0 @@
-𝐿 ( 𝜽 ) = E 𝑙 GLYPH<26> 𝜆 ( 𝑙 ) E x 0 E x 𝑙 | x 0 GLYPH<20> GLYPH<13> GLYPH<13> GLYPH<13> 𝑆 𝜽 ( x 𝑙 , 𝑙 ) - ∇ x 𝑙 log 𝑝 ( x 𝑙 | x 0 ) GLYPH<13> GLYPH<13> GLYPH<13> 2 2 GLYPH<21> GLYPH<27> ,

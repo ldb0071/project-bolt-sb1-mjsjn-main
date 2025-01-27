@@ -1,12 +1,12 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Folder, Search, Trash2, Download, Calendar, FileText } from 'lucide-react';
+import { Plus, Folder, Search, Trash2, Download, Calendar, FileText, MessageSquare } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useStore } from '../store/useStore';
 import { ArxivSearchModal } from '../components/ArxivSearchModal';
 import { toast } from 'react-hot-toast';
 import { ChatButton } from '../components/ChatButton';
-import { convertAllProjectPDFs } from '../services/apiClient';
+import { convertAllProjectPDFs, downloadProjectAsZip } from '../services/apiClient';
 
 export function ProjectsPage() {
   const navigate = useNavigate();
@@ -51,6 +51,18 @@ export function ProjectsPage() {
       toast.success(`${result.converted} out of ${result.total} PDFs converted successfully`);
     } catch (error: any) {
       toast.error(error.message || 'Failed to convert PDFs');
+    }
+  };
+
+  const handleDownloadProjectFiles = async (projectId: string, projectName: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const loadingToast = toast.loading('Creating ZIP file...');
+      await downloadProjectAsZip(projectName);
+      toast.dismiss(loadingToast);
+      toast.success('Project files downloaded successfully');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to download project files');
     }
   };
 
@@ -110,9 +122,9 @@ export function ProjectsPage() {
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {filteredProjects.length === 0 ? (
-          <div className="flex flex-col items-center justify-center min-h-[400px] text-center">
-            <div className="w-16 h-16 bg-primary-500/10 rounded-full flex items-center justify-center mb-4">
-              <Folder className="w-8 h-8 text-primary-400" />
+          <div className="flex flex-col items-center justify-center min-h-[500px] text-center max-w-3xl mx-auto">
+            <div className="w-20 h-20 bg-gradient-to-br from-primary-500/20 to-accent-500/20 rounded-full flex items-center justify-center mb-6 animate-pulse">
+              <Folder className="w-10 h-10 text-primary-400" />
             </div>
             {searchTerm ? (
               <>
@@ -121,14 +133,33 @@ export function ProjectsPage() {
               </>
             ) : (
               <>
-                <h3 className="text-xl font-semibold text-white mb-2">Create your first project</h3>
-                <p className="text-gray-400 mb-4">Get started by creating a new project to organize your PDFs</p>
+                <h3 className="text-2xl font-bold text-white mb-3">Welcome to PDF Assistant</h3>
+                <p className="text-gray-400 mb-8 text-lg max-w-lg">Create your first project to start organizing and analyzing your PDFs with AI-powered tools</p>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 w-full">
+                  <div className="bg-navy-800/50 p-6 rounded-xl border border-navy-700">
+                    <FileText className="w-8 h-8 text-primary-400 mb-3" />
+                    <h4 className="text-white font-medium mb-2">PDF Management</h4>
+                    <p className="text-gray-400 text-sm">Organize and manage your PDFs in one central location</p>
+                  </div>
+                  <div className="bg-navy-800/50 p-6 rounded-xl border border-navy-700">
+                    <MessageSquare className="w-8 h-8 text-accent-400 mb-3" />
+                    <h4 className="text-white font-medium mb-2">AI Chat Assistant</h4>
+                    <p className="text-gray-400 text-sm">Chat with AI about your documents for deeper insights</p>
+                  </div>
+                  <div className="bg-navy-800/50 p-6 rounded-xl border border-navy-700">
+                    <Download className="w-8 h-8 text-emerald-400 mb-3" />
+                    <h4 className="text-white font-medium mb-2">ArXiv Integration</h4>
+                    <p className="text-gray-400 text-sm">Download and analyze research papers directly</p>
+                  </div>
+                </div>
+
                 <button
                   onClick={() => setShowCreateModal(true)}
-                  className="btn-primary flex items-center gap-2 px-4 py-2 rounded-lg"
+                  className="btn-primary flex items-center gap-2 px-6 py-3 text-lg rounded-xl shadow-lg shadow-primary-500/20 hover:shadow-primary-500/30 transition-all duration-300"
                 >
-                  <Plus size={20} />
-                  New Project
+                  <Plus className="w-6 h-6" />
+                  Create Your First Project
                 </button>
               </>
             )}
@@ -171,14 +202,24 @@ export function ProjectsPage() {
                   </div>
                 </div>
                 <div className="border-t border-navy-700 px-6 py-3 bg-navy-800/50 flex justify-between rounded-b-xl">
-                  <button
-                    onClick={(e) => handleConvertAllPDFs(project.id, project.name, e)}
-                    className="text-gray-400 hover:text-primary-400 p-2 rounded-full hover:bg-navy-700 transition-colors flex items-center gap-2"
-                    title="Convert all PDFs to Markdown"
-                  >
-                    <FileText size={18} />
-                    <span className="text-sm">Convert All</span>
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={(e) => handleConvertAllPDFs(project.id, project.name, e)}
+                      className="text-gray-400 hover:text-primary-400 p-2 rounded-lg hover:bg-navy-700 transition-colors flex items-center gap-2"
+                      title="Convert all PDFs to Markdown"
+                    >
+                      <FileText size={18} />
+                      <span className="text-sm">Convert All</span>
+                    </button>
+                    <button
+                      onClick={(e) => handleDownloadProjectFiles(project.id, project.name, e)}
+                      className="text-gray-400 hover:text-primary-400 p-2 rounded-lg hover:bg-navy-700 transition-colors flex items-center gap-2"
+                      title="Download all project files as ZIP"
+                    >
+                      <Download size={18} />
+                      <span className="text-sm">Download All</span>
+                    </button>
+                  </div>
                   <button
                     onClick={(e) => {
                       e.stopPropagation();

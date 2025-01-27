@@ -1,1 +1,0 @@
-The higher this measurement of x 𝑡 is, the more likely it is to be abnormal.

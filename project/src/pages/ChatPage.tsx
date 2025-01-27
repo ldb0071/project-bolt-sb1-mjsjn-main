@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, Maximize2, Minimize2, AlertCircle, Settings, Trash2, Plus, MessageSquare, Cpu, Image as ImageIcon, X } from 'lucide-react';
+import { Send, Bot, User, Maximize2, Minimize2, AlertCircle, Settings, Trash2, Plus, MessageSquare, Cpu, Image as ImageIcon, X, Database, Play } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { StreamingText } from '../components/StreamingText';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -9,9 +9,27 @@ import { toast } from 'react-hot-toast';
 import { ComparisonTable } from '../components/ComparisonTable';
 import { PaperDownloadCards } from '../components/PaperDownloadCards';
 import { useNavigate } from 'react-router-dom';
+import { ragChat } from '../services/apiClient';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import remarkGfm from 'remark-gfm';
+
+// Update ModelConfig type to include type field
+interface ModelConfig {
+  name: string;
+  type: 'gemini' | 'gpt4';  // Update the type to be more specific
+}
+
+// Remove AVAILABLE_MODELS redeclaration
+declare module '../services/chatService' {
+  interface AVAILABLE_MODELS_TYPE {
+    [key: string]: ModelConfig;
+  }
+}
 
 interface ChatPageProps {
   onFullScreenChange?: (isFullScreen: boolean) => void;
+  isInChatWindow?: boolean;
 }
 
 interface Chat {
@@ -28,20 +46,28 @@ interface CompletedMessage {
   isComplete: boolean;
 }
 
+interface CodeOutput {
+  messageIndex: number;
+  output: string;
+  error: string;
+}
+
 const BUILT_IN_ROLES = [
   'default',
   'developer',
   'researcher',
   'analyst',
   'medical',
-  'administrator'
+  'administrator',
+  'ragChat'
 ] as const;
 
-export function ChatPage({ onFullScreenChange }: ChatPageProps) {
+export function ChatPage({ onFullScreenChange, isInChatWindow }: ChatPageProps) {
   const {
     customRoles,
     modifiedBuiltInRoles,
     getBuiltInRoleConfig,
+    projects
   } = useStore();
   const [chats, setChats] = useState<Chat[]>(() => {
     const savedChats = localStorage.getItem('chats');
@@ -76,6 +102,10 @@ export function ChatPage({ onFullScreenChange }: ChatPageProps) {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
+  const [selectedProject, setSelectedProject] = useState<string | null>(null);
+  const [showProjectSelector, setShowProjectSelector] = useState(false);
+  const [codeOutput, setCodeOutput] = useState<CodeOutput | null>(null);
+  const [isOpen, setIsOpen] = useState(false);
 
   // Get all available roles (built-in + custom)
   const availableRoles = React.useMemo(() => {
@@ -284,11 +314,20 @@ export function ChatPage({ onFullScreenChange }: ChatPageProps) {
     e.preventDefault();
     if (!input.trim() && !selectedImage) return;
     
-    const modelConfig = AVAILABLE_MODELS[currentModel];
-    if (modelConfig.type === 'azure' && !githubToken) {
-      toast.error('Please add your GitHub token in settings first');
+    // Check if project is selected for ragChat role
+    if (currentRole === 'ragChat' && !selectedProject) {
+      toast.error('Please select a project first');
+      setShowProjectSelector(true);
       return;
-    } else if (modelConfig.type === 'gemini' && !geminiKey) {
+    }
+
+    const modelConfig = AVAILABLE_MODELS[currentModel];
+    if (!modelConfig) {
+      toast.error('Invalid model selected');
+      return;
+    }
+    
+    if (!geminiKey) {
       toast.error('Please add your Gemini API key in settings first');
       return;
     }
@@ -313,13 +352,25 @@ export function ChatPage({ onFullScreenChange }: ChatPageProps) {
     setIsLoading(true);
 
     try {
-      const response = await sendChatMessage(
-        [...messages, newMessage], 
-        geminiKey, 
-        currentRole,
-        currentModel,
-        githubToken
-      );
+      let response;
+      if (currentRole === 'ragChat') {
+        // Use RAG chat service
+        const ragResponse = await ragChat(selectedProject!, input.trim());
+        response = {
+          content: ragResponse.answer,
+          arxivPapers: undefined
+        };
+      } else {
+        // Use regular chat service
+        response = await sendChatMessage(
+          [...messages, newMessage], 
+          geminiKey, 
+          currentRole,
+          currentModel,
+          githubToken
+        );
+      }
+
       const assistantMessageId = crypto.randomUUID();
       setChats(prev => prev.map(chat => 
         chat.id === currentChatId 
@@ -352,6 +403,15 @@ export function ChatPage({ onFullScreenChange }: ChatPageProps) {
         ? { ...chat, messages: [] }
         : chat
     ));
+
+    // If ragChat role is selected, show project selector
+    if (role === 'ragChat') {
+      setShowProjectSelector(true);
+      setSelectedProject(null);
+    } else {
+      setShowProjectSelector(false);
+      setSelectedProject(null);
+    }
 
     // Get the role title from either built-in or custom roles
     let roleTitle: string;
@@ -460,77 +520,226 @@ export function ChatPage({ onFullScreenChange }: ChatPageProps) {
     );
   };
 
-  const renderMessage = (message: ChatMessage, messageIndex: number) => (
-    <motion.div
-      key={message.id}
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      className={`flex items-start gap-4 group ${
-        message.role === 'assistant' 
-          ? 'bg-gray-50 dark:bg-navy-800 rounded-lg p-6' 
-          : 'px-2'
-      }`}
-    >
-      {message.role === 'assistant' ? (
-        <div className="w-8 h-8 rounded-full bg-primary-100 dark:bg-primary-900 flex items-center justify-center flex-shrink-0">
-          <Bot className="h-5 w-5 text-primary-600 dark:text-primary-400" />
-        </div>
-      ) : (
-        <div className="w-8 h-8 rounded-full bg-primary-600 flex items-center justify-center flex-shrink-0">
-          <User className="h-5 w-5 text-white" />
-        </div>
-      )}
-      <div className="flex-1">
-        <div className="flex items-center justify-between gap-2 mb-1">
-          <div className="flex items-center gap-2">
-            <span className="font-medium text-sm text-gray-600 dark:text-gray-300">
-              {message.role === 'assistant' ? 'AI Assistant' : 'You'}
-            </span>
-            {message.timestamp && (
-              <span className="text-xs text-gray-400">
-                {new Date(message.timestamp).toLocaleTimeString()}
-              </span>
-            )}
+  const executeCode = async (code: string, messageIndex: number) => {
+    try {
+      const response = await fetch('http://localhost:8080/api/execute-code', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ code: code }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const text = await response.text();
+      let result;
+      try {
+        result = JSON.parse(text);
+      } catch (parseError) {
+        console.error('Failed to parse response:', text);
+        throw new Error('Invalid response format from server');
+      }
+
+      setCodeOutput({
+        messageIndex,
+        ...result
+      });
+    } catch (error) {
+      console.error('Code execution error:', error);
+      setCodeOutput({
+        messageIndex,
+        output: '',
+        error: 'Failed to execute code: ' + (error instanceof Error ? error.message : String(error))
+      });
+    }
+  };
+
+  const renderMessage = (message: ChatMessage, messageIndex: number) => {
+    const codeBlocks = message.content.match(/```[\s\S]*?```/g) || [];
+    const parts = message.content.split(/```[\s\S]*?```/);
+
+    return (
+      <motion.div
+        key={messageIndex}
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -20 }}
+        className={`group relative flex items-start gap-3 mb-4 ${
+          message.role === 'assistant'
+            ? 'bg-gray-50 dark:bg-navy-800 rounded-xl p-6'
+            : 'px-2'
+        }`}
+      >
+        {message.role === 'assistant' ? (
+          <div className="w-8 h-8 rounded-full bg-primary-100 dark:bg-primary-900 flex items-center justify-center flex-shrink-0">
+            <Bot className="h-5 w-5 text-primary-600 dark:text-primary-400" />
           </div>
-          <button
-            onClick={() => deleteMessage(messageIndex)}
-            className="opacity-0 group-hover:opacity-100 p-1 rounded-lg text-gray-400 
-              hover:text-red-400 hover:bg-red-500/10 transition-all duration-200"
-            title="Delete message"
-          >
-            <Trash2 className="h-4 w-4" />
-          </button>
-        </div>
-        <div className="prose prose-sm md:prose-base dark:prose-invert max-w-none overflow-x-auto">
-          {message.image && (
-            <div className="mb-4">
-              <img 
-                src={message.image} 
-                alt="Uploaded content"
-                className="max-w-full rounded-lg shadow-md"
-                style={{ maxHeight: '400px' }}
-              />
+        ) : (
+          <div className="w-8 h-8 rounded-full bg-primary-600 flex items-center justify-center flex-shrink-0">
+            <User className="h-5 w-5 text-white" />
+          </div>
+        )}
+        <div className="flex-1 min-w-0 overflow-hidden">
+          <div className="flex items-center justify-between gap-2 mb-1">
+            <div className="flex items-center gap-2">
+              <span className="font-medium text-sm text-gray-600 dark:text-gray-300">
+                {message.role === 'assistant' ? 'AI Assistant' : 'You'}
+              </span>
+              {message.timestamp && (
+                <span className="text-xs text-gray-400">
+                  {new Date(message.timestamp).toLocaleTimeString()}
+                </span>
+              )}
             </div>
-          )}
-          {message.role === 'assistant' ? (
-            <>
-              {message.id === messages[messages.length - 1]?.id && isLoading ? (
-                <StreamingText onComplete={() => handleMessageComplete(message.id)}>
-                  {renderMessageContent(message.content)}
-                </StreamingText>
-              ) : (
-                renderMessageContent(message.content)
-              )}
-              {message.arxivPapers && message.arxivPapers.length > 0 && (
-                <PaperDownloadCards papers={message.arxivPapers} />
-              )}
-            </>
-          ) : (
-            <ReactMarkdown>{message.content}</ReactMarkdown>
-          )}
+            <button
+              onClick={() => deleteMessage(messageIndex)}
+              className="opacity-0 group-hover:opacity-100 p-1 rounded-lg text-gray-400 
+                hover:text-red-400 hover:bg-red-500/10 transition-all duration-200"
+              title="Delete message"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="prose prose-sm dark:prose-invert max-w-none break-words">
+            {parts.map((part, i) => (
+              <React.Fragment key={i}>
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    ...markdownComponents,
+                    p: (props: any) => (
+                      <p className="mb-4 text-gray-700 dark:text-gray-300 leading-relaxed break-words" {...props} />
+                    ),
+                    pre: (props: any) => (
+                      <pre className="overflow-x-auto max-w-full" {...props} />
+                    ),
+                    code: (props: any) => {
+                      if (props.inline) {
+                        return <code className="px-1.5 py-0.5 bg-gray-100 dark:bg-navy-700 rounded text-sm font-mono break-all" {...props} />;
+                      }
+                      return (
+                        <div className="relative">
+                          <SyntaxHighlighter
+                            language="python"
+                            style={oneDark}
+                            className="rounded-lg !mt-0 max-w-full overflow-x-auto"
+                            customStyle={{ maxWidth: '100%' }}
+                          >
+                            {props.children}
+                          </SyntaxHighlighter>
+                          {message.role === 'assistant' && (
+                            <button
+                              onClick={() => executeCode(props.children, messageIndex)}
+                              className="absolute top-2 right-2 p-2 bg-primary-500 text-white rounded-lg 
+                                hover:bg-primary-600 transition-colors"
+                              title="Run code"
+                            >
+                              <Play className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    }
+                  }}
+                >
+                  {part}
+                </ReactMarkdown>
+                {i < (message.content.match(/```[\s\S]*?```/g)?.length || 0) && (
+                  <div className="relative">
+                    <SyntaxHighlighter
+                      language="python"
+                      style={oneDark}
+                      className="rounded-lg !mt-0 max-w-full overflow-x-auto"
+                      customStyle={{ maxWidth: '100%' }}
+                    >
+                      {(message.content.match(/```[\s\S]*?```/g) || [])[i]?.replace(/```(python)?\n?/g, '') || ''}
+                    </SyntaxHighlighter>
+                    {message.role === 'assistant' && (
+                      <button
+                        onClick={() => executeCode((message.content.match(/```[\s\S]*?```/g) || [])[i]?.replace(/```(python)?\n?/g, '') || '', messageIndex)}
+                        className="absolute top-2 right-2 p-2 bg-primary-500 text-white rounded-lg 
+                          hover:bg-primary-600 transition-colors"
+                        title="Run code"
+                      >
+                        <Play className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+                )}
+              </React.Fragment>
+            ))}
+          </div>
+          {codeOutput && codeOutput.messageIndex === messageIndex && (
+                  <div className="mt-4 space-y-2">
+                    {codeOutput.output && (
+                <div className="bg-gray-100 dark:bg-navy-700 p-4 rounded-lg overflow-x-auto">
+                        <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-2">Output:</h4>
+                  <pre className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words">
+                          {codeOutput.output}
+                        </pre>
+                      </div>
+                    )}
+                    {codeOutput.error && (
+                <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg overflow-x-auto">
+                        <h4 className="text-sm font-medium text-red-800 dark:text-red-400 mb-2">Error:</h4>
+                  <pre className="text-sm text-red-700 dark:text-red-300 whitespace-pre-wrap break-words">
+                          {codeOutput.error}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
+                )}
         </div>
-      </div>
-    </motion.div>
+      </motion.div>
+    );
+  };
+
+  // Add project selector dropdown
+  const ProjectSelector = () => (
+    <AnimatePresence>
+      {showProjectSelector && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -10 }}
+          className="absolute top-16 right-4 w-80 bg-white dark:bg-navy-800 rounded-lg shadow-lg z-50 border border-gray-200 dark:border-navy-700 p-2"
+        >
+          <div className="space-y-2">
+            <div className="px-2 py-1">
+              <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">Select Project</h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Choose a project to chat about</p>
+            </div>
+            <div className="space-y-1">
+              {projects.map(project => (
+                <button
+                  key={project.id}
+                  onClick={() => {
+                    setSelectedProject(project.name);
+                    setShowProjectSelector(false);
+                  }}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg transition-colors ${
+                    selectedProject === project.name
+                      ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400'
+                      : 'hover:bg-gray-50 dark:hover:bg-navy-700 text-gray-700 dark:text-gray-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <Database className="h-4 w-4 text-gray-400" />
+                    <span>{project.name}</span>
+                  </div>
+                  <span className="text-xs text-gray-400">
+                    {project.files?.length || 0} files
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 
   return (
@@ -607,9 +816,22 @@ export function ChatPage({ onFullScreenChange }: ChatPageProps) {
             <Bot className="h-6 w-6 text-primary-500" />
             <div>
               <h1 className="text-lg font-semibold text-gray-900 dark:text-white">AI Assistant</h1>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                {ROLE_CONFIGS[currentRole]?.title || 'Assistant'}
-              </p>
+              <div className="flex items-center gap-2">
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  {ROLE_CONFIGS[currentRole]?.title || 'Assistant'}
+                </p>
+                {currentRole === 'ragChat' && (
+                  <>
+                    <span className="text-gray-400">•</span>
+                    <button
+                      onClick={() => setShowProjectSelector(true)}
+                      className="text-sm text-primary-500 hover:text-primary-600 dark:text-primary-400 dark:hover:text-primary-300"
+                    >
+                      {selectedProject || 'Select Project'}
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -622,154 +844,181 @@ export function ChatPage({ onFullScreenChange }: ChatPageProps) {
             <Cpu className="h-5 w-5 text-gray-500" />
           </button>
           <button
-            onClick={() => setShowRoleSelector(!showRoleSelector)}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-navy-800 rounded-lg transition-colors"
-            title="Change Assistant Role"
-          >
-            <Settings className="h-5 w-5 text-gray-500" />
-          </button>
-          <button
             onClick={clearChatHistory}
             className="p-2 hover:bg-gray-100 dark:hover:bg-navy-800 rounded-lg transition-colors text-gray-500"
             title="Clear Chat History"
           >
             <Trash2 className="h-5 w-5" />
           </button>
-          <button
-            onClick={toggleFullScreen}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-navy-800 rounded-lg transition-colors"
-            title={isFullScreen ? "Exit Full Screen" : "Enter Full Screen"}
-          >
-            {isFullScreen ? (
-              <Minimize2 className="h-5 w-5 text-gray-500" />
-            ) : (
-              <Maximize2 className="h-5 w-5 text-gray-500" />
-            )}
-          </button>
+          {isInChatWindow && (
+            <button
+              onClick={toggleFullScreen}
+              className="p-2 hover:bg-gray-100 dark:hover:bg-navy-800 rounded-lg transition-colors"
+              title={isFullScreen ? "Exit Full Screen" : "Enter Full Screen"}
+            >
+              {isFullScreen ? (
+                <Minimize2 className="h-5 w-5 text-gray-500" />
+              ) : (
+                <Maximize2 className="h-5 w-5 text-gray-500" />
+              )}
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Model Selector Dropdown */}
+      {/* Add ProjectSelector component */}
+      <ProjectSelector />
+
+      {/* Model & Role Settings Modal */}
       <AnimatePresence>
         {showModelSelector && (
           <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="absolute top-16 right-4 w-72 bg-white dark:bg-navy-800 rounded-lg shadow-lg z-50 border border-gray-200 dark:border-navy-700"
+            className="fixed top-16 right-4 w-[600px] max-h-[calc(100vh-8rem)] bg-navy-900 rounded-lg shadow-lg z-[60] border border-navy-700 flex flex-col"
           >
-            {Object.entries(AVAILABLE_MODELS).map(([modelId, config]) => (
-              <button
-                key={modelId}
-                onClick={() => handleModelChange(modelId as ModelId)}
-                className={`w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-navy-700 transition-colors
-                  ${currentModel === modelId ? 'bg-gray-50 dark:bg-navy-700' : ''}`}
-              >
-                <div className="font-medium text-gray-900 dark:text-white">
-                  {config.name}
-                </div>
-                <div className="text-sm text-gray-500 dark:text-gray-400">
-                  {config.type === 'azure' ? 'Azure OpenAI' : 'Google Gemini'}
-                </div>
-              </button>
-            ))}
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Role Selector Dropdown */}
-      <AnimatePresence>
-        {showRoleSelector && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="absolute top-16 right-4 w-80 bg-white dark:bg-navy-800 rounded-lg shadow-lg z-50 border border-gray-200 dark:border-navy-700 p-2"
-          >
-            <div className="space-y-2">
-              <div className="px-2 py-1">
-                <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">Select Assistant Role</h3>
+            <div className="p-6 border-b border-navy-700">
+              <div className="flex justify-between items-center">
+                <h2 className="text-xl font-semibold text-white">Model & Role Settings</h2>
+                <button
+                  onClick={() => setShowModelSelector(false)}
+                  className="p-2 hover:bg-navy-800 rounded-lg transition-colors text-gray-400"
+                >
+                  <X className="h-5 w-5" />
+                </button>
               </div>
-              
-              {/* Built-in Roles */}
-              <div className="space-y-1">
-                <div className="px-2 py-1">
-                  <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400">Built-in Roles</h4>
-                </div>
-                {availableRoles
-                  .filter(role => role.isBuiltIn)
-                  .map(role => (
-                    <button
-                      key={role.id}
-                      onClick={() => handleRoleChange(role.id as AssistantRole)}
-                      className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
-                        currentRole === role.id 
-                          ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400'
-                          : 'hover:bg-gray-50 dark:hover:bg-navy-700 text-gray-700 dark:text-gray-300'
-                      }`}
-                    >
-                      <Bot className={`h-5 w-5 ${
-                        currentRole === role.id
-                          ? 'text-primary-500'
-                          : 'text-gray-400'
-                      }`} />
-                      <div className="text-left">
-                        <div className="font-medium">{role.config?.title || 'Custom Role'}</div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400 line-clamp-1">
-                          {role.config?.description || 'No description available'}
-                        </div>
-                      </div>
-                    </button>
-                  ))}
-              </div>
+            </div>
 
-              {/* Custom Roles */}
-              {customRoles.length > 0 && (
-                <div className="space-y-1 pt-2 border-t border-gray-200 dark:border-navy-700">
-                  <div className="px-2 py-1">
-                    <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400">Custom Roles</h4>
-                  </div>
-                  {availableRoles
-                    .filter(role => !role.isBuiltIn)
-                    .map(role => (
+            <div className="flex-1 overflow-y-auto p-6">
+              <div className="grid grid-cols-2 gap-12">
+                {/* Model Selection */}
+                <div>
+                  <h3 className="text-2xl font-semibold text-white mb-6">Select Model</h3>
+                  <div className="space-y-2 overflow-y-auto">
+                    {Object.entries(AVAILABLE_MODELS).map(([modelId, config]) => (
                       <button
-                        key={role.id}
-                        onClick={() => handleRoleChange(`custom_${role.id}` as AssistantRole)}
-                        className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
-                          currentRole === `custom_${role.id}`
-                            ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400'
-                            : 'hover:bg-gray-50 dark:hover:bg-navy-700 text-gray-700 dark:text-gray-300'
+                        key={modelId}
+                        onClick={() => handleModelChange(modelId as ModelId)}
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+                          currentModel === modelId 
+                            ? 'bg-primary-900/20 border border-primary-500/50'
+                            : 'hover:bg-navy-800 border border-transparent'
                         }`}
                       >
-                        <Bot className={`h-5 w-5 ${
-                          currentRole === `custom_${role.id}`
-                            ? 'text-primary-500'
-                            : 'text-gray-400'
-                        }`} />
+                        <div className="flex-shrink-0">
+                          <div className={`w-8 h-8 rounded-lg bg-navy-800 flex items-center justify-center ${
+                            currentModel === modelId ? 'text-primary-400' : 'text-gray-400'
+                          }`}>
+                            <Cpu className="h-5 w-5" />
+                          </div>
+                        </div>
                         <div className="text-left">
-                          <div className="font-medium">{role.config?.title || 'Custom Role'}</div>
-                          <div className="text-xs text-gray-500 dark:text-gray-400 line-clamp-1">
-                            {role.config?.description || 'No description available'}
+                          <div className="font-medium text-white">{config.name}</div>
+                          <div className="text-sm text-gray-400">
+                            {config.type === 'gpt4' ? 'Azure OpenAI' : 'Google Gemini'}
                           </div>
                         </div>
                       </button>
                     ))}
+                  </div>
                 </div>
-              )}
 
-              {/* Create Custom Role Button */}
-              <div className="pt-2 border-t border-gray-200 dark:border-navy-700">
+                {/* Role Selection */}
+                <div>
+                  <h3 className="text-2xl font-semibold text-white mb-6">Select Role</h3>
+                  <div className="space-y-2 overflow-y-auto">
+                    {/* Built-in Roles */}
+                    <div className="space-y-2">
+                      {availableRoles
+                        .filter(role => role.isBuiltIn)
+                        .map(role => (
+                          <button
+                            key={role.id}
+                            onClick={() => handleRoleChange(role.id as AssistantRole)}
+                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+                              currentRole === role.id 
+                                ? 'bg-primary-900/20 border border-primary-500/50'
+                                : 'hover:bg-navy-800 border border-transparent'
+                            }`}
+                          >
+                            <div className="flex-shrink-0">
+                              <div className={`w-8 h-8 rounded-lg bg-navy-800 flex items-center justify-center ${
+                                currentRole === role.id ? 'text-primary-400' : 'text-gray-400'
+                              }`}>
+                                <Bot className="h-5 w-5" />
+                              </div>
+                            </div>
+                            <div className="text-left">
+                              <div className="font-medium text-white">{role.config?.title || 'Custom Role'}</div>
+                              <div className="text-sm text-gray-400 line-clamp-1">
+                                {role.config?.description || 'No description available'}
+                              </div>
+                            </div>
+                          </button>
+                        ))}
+                    </div>
+
+                    {/* Custom Roles */}
+                    {availableRoles.filter(role => !role.isBuiltIn).length > 0 && (
+                      <>
+                        <div className="h-px bg-navy-700 my-3" />
+                        <div className="space-y-2">
+                          {availableRoles
+                            .filter(role => !role.isBuiltIn)
+                            .map(role => (
+                              <button
+                                key={role.id}
+                                onClick={() => handleRoleChange(`custom_${role.id}` as AssistantRole)}
+                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+                                  currentRole === `custom_${role.id}`
+                                    ? 'bg-primary-900/20 border border-primary-500/50'
+                                    : 'hover:bg-navy-800 border border-transparent'
+                                }`}
+                              >
+                                <div className="flex-shrink-0">
+                                  <div className={`w-8 h-8 rounded-lg bg-navy-800 flex items-center justify-center ${
+                                    currentRole === `custom_${role.id}` ? 'text-primary-400' : 'text-gray-400'
+                                  }`}>
+                                    <Bot className="h-5 w-5" />
+                                  </div>
+                                </div>
+                                <div className="text-left">
+                                  <div className="font-medium text-white">{role.config?.title || 'Custom Role'}</div>
+                                  <div className="text-sm text-gray-400 line-clamp-1">
+                                    {role.config?.description || 'No description available'}
+                                  </div>
+                                </div>
+                              </button>
+                            ))}
+                        </div>
+                      </>
+                    )}
+
+                    {/* Create Custom Role Button */}
+                    <button
+                      onClick={() => {
+                        setShowModelSelector(false);
+                        navigate('/settings');
+                      }}
+                      className="w-full flex items-center gap-2 px-4 py-3 text-sm font-medium text-primary-400 
+                        hover:text-primary-300 hover:bg-navy-800 rounded-lg transition-colors border border-dashed border-navy-700"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Create Custom Role
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6 border-t border-navy-700">
+              <div className="flex justify-end">
                 <button
-                  onClick={() => {
-                    setShowRoleSelector(false);
-                    navigate('/settings');
-                  }}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-primary-600 
-                    hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 hover:bg-gray-50 
-                    dark:hover:bg-navy-700 rounded-lg transition-colors"
+                  onClick={() => setShowModelSelector(false)}
+                  className="px-6 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg transition-colors"
                 >
-                  <Plus className="h-4 w-4" />
-                  Create Custom Role
+                  Apply Changes
                 </button>
               </div>
             </div>
@@ -780,7 +1029,7 @@ export function ChatPage({ onFullScreenChange }: ChatPageProps) {
       {/* Messages Container */}
       <div className={`flex-1 overflow-y-auto ${isFullScreen ? 'h-[calc(100vh-8rem)]' : ''}`}
            style={{ overflowY: 'auto', maxHeight: isFullScreen ? 'calc(100vh - 8rem)' : undefined }}>
-        <div className={`max-w-4xl mx-auto w-full p-4`}>
+        <div className="max-w-4xl mx-auto w-full p-4 overflow-hidden">
           <AnimatePresence mode="wait">
             {messages.length === 0 ? (
               <motion.div
@@ -789,10 +1038,10 @@ export function ChatPage({ onFullScreenChange }: ChatPageProps) {
                 exit={{ opacity: 0, y: -20 }}
                 className="h-full flex items-center justify-center text-gray-500 min-h-[200px]"
               >
-                <div className="text-center">
+                <div className="text-center max-w-full">
                   <Bot className="h-12 w-12 mx-auto mb-4 text-primary-500" />
                   <p>Start a conversation with the {ROLE_CONFIGS[currentRole]?.title || 'Assistant'}</p>
-                  <p className="mt-2 text-sm text-gray-400 max-w-md">
+                  <p className="mt-2 text-sm text-gray-400 max-w-md mx-auto">
                     {ROLE_CONFIGS[currentRole]?.description || 'No description available'}
                   </p>
                   {!geminiKey && (
@@ -804,7 +1053,140 @@ export function ChatPage({ onFullScreenChange }: ChatPageProps) {
                 </div>
               </motion.div>
             ) : (
-              messages.map((message, messageIndex) => renderMessage(message, messageIndex))
+              messages.map((message, messageIndex) => (
+                <motion.div
+                  key={messageIndex}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  className={`group relative flex items-start gap-3 mb-4 ${
+                    message.role === 'assistant'
+                      ? 'bg-gray-50 dark:bg-navy-800 rounded-xl p-6'
+                      : 'px-2'
+                  }`}
+                >
+                  {message.role === 'assistant' ? (
+                    <div className="w-8 h-8 rounded-full bg-primary-100 dark:bg-primary-900 flex items-center justify-center flex-shrink-0">
+                      <Bot className="h-5 w-5 text-primary-600 dark:text-primary-400" />
+                    </div>
+                  ) : (
+                    <div className="w-8 h-8 rounded-full bg-primary-600 flex items-center justify-center flex-shrink-0">
+                      <User className="h-5 w-5 text-white" />
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0 overflow-hidden">
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-sm text-gray-600 dark:text-gray-300">
+                          {message.role === 'assistant' ? 'AI Assistant' : 'You'}
+                        </span>
+                        {message.timestamp && (
+                          <span className="text-xs text-gray-400">
+                            {new Date(message.timestamp).toLocaleTimeString()}
+                          </span>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => deleteMessage(messageIndex)}
+                        className="opacity-0 group-hover:opacity-100 p-1 rounded-lg text-gray-400 
+                          hover:text-red-400 hover:bg-red-500/10 transition-all duration-200"
+                        title="Delete message"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <div className="prose prose-sm dark:prose-invert max-w-none break-words">
+                      {message.content.split(/```[\s\S]*?```/).map((part, i) => (
+                        <React.Fragment key={i}>
+                          <ReactMarkdown
+                            remarkPlugins={[remarkGfm]}
+                            components={{
+                              ...markdownComponents,
+                              p: (props: any) => (
+                                <p className="mb-4 text-gray-700 dark:text-gray-300 leading-relaxed break-words" {...props} />
+                              ),
+                              pre: (props: any) => (
+                                <pre className="overflow-x-auto max-w-full" {...props} />
+                              ),
+                              code: (props: any) => {
+                                if (props.inline) {
+                                  return <code className="px-1.5 py-0.5 bg-gray-100 dark:bg-navy-700 rounded text-sm font-mono break-all" {...props} />;
+                                }
+                                return (
+                                  <div className="relative">
+                                    <SyntaxHighlighter
+                                      language="python"
+                                      style={oneDark}
+                                      className="rounded-lg !mt-0 max-w-full overflow-x-auto"
+                                      customStyle={{ maxWidth: '100%' }}
+                                    >
+                                      {props.children}
+                                    </SyntaxHighlighter>
+                                    {message.role === 'assistant' && (
+                                      <button
+                                        onClick={() => executeCode(props.children, messageIndex)}
+                                        className="absolute top-2 right-2 p-2 bg-primary-500 text-white rounded-lg 
+                                          hover:bg-primary-600 transition-colors"
+                                        title="Run code"
+                                      >
+                                        <Play className="h-4 w-4" />
+                                      </button>
+                                    )}
+                                  </div>
+                                );
+                              }
+                            }}
+                          >
+                            {part}
+                          </ReactMarkdown>
+                          {i < (message.content.match(/```[\s\S]*?```/g)?.length || 0) && (
+                            <div className="relative">
+                              <SyntaxHighlighter
+                                language="python"
+                                style={oneDark}
+                                className="rounded-lg !mt-0 max-w-full overflow-x-auto"
+                                customStyle={{ maxWidth: '100%' }}
+                              >
+                                {(message.content.match(/```[\s\S]*?```/g) || [])[i]?.replace(/```(python)?\n?/g, '') || ''}
+                              </SyntaxHighlighter>
+                              {message.role === 'assistant' && (
+                                <button
+                                  onClick={() => executeCode((message.content.match(/```[\s\S]*?```/g) || [])[i]?.replace(/```(python)?\n?/g, '') || '', messageIndex)}
+                                  className="absolute top-2 right-2 p-2 bg-primary-500 text-white rounded-lg 
+                                    hover:bg-primary-600 transition-colors"
+                                  title="Run code"
+                                >
+                                  <Play className="h-4 w-4" />
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </React.Fragment>
+                      ))}
+                    </div>
+                    {codeOutput && codeOutput.messageIndex === messageIndex && (
+                      <div className="mt-4 space-y-2">
+                        {codeOutput.output && (
+                          <div className="bg-gray-100 dark:bg-navy-700 p-4 rounded-lg overflow-x-auto">
+                            <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-2">Output:</h4>
+                            <pre className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words">
+                              {codeOutput.output}
+                            </pre>
+                          </div>
+                        )}
+                        {codeOutput.error && (
+                          <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg overflow-x-auto">
+                            <h4 className="text-sm font-medium text-red-800 dark:text-red-400 mb-2">Error:</h4>
+                            <pre className="text-sm text-red-700 dark:text-red-300 whitespace-pre-wrap break-words">
+                              {codeOutput.error}
+                            </pre>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
+              ))
             )}
             {error && (
               <motion.div
@@ -888,6 +1270,16 @@ export function ChatPage({ onFullScreenChange }: ChatPageProps) {
           </form>
         </div>
       </div>
+
+      {/* Chat Button - Updated Scale */}
+      <button
+        onClick={() => setIsOpen(true)}
+        className="fixed bottom-6 right-6 p-3 bg-primary-500 hover:bg-primary-600 text-white rounded-lg shadow-lg 
+          hover:shadow-xl transition-all duration-300 z-30 flex items-center gap-2 scale-100 hover:scale-105"
+      >
+        <MessageSquare className="h-5 w-5" />
+        <span className="font-medium">Chat</span>
+      </button>
     </div>
   );
 }

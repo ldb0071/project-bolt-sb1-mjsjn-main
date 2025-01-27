@@ -15,7 +15,7 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { CustomRole, ModifiedBuiltInRole, ROLE_CONFIGS, AssistantRole, RoleConfig } from '../services/chatService';
+import { CustomRole, RoleConfig, AssistantRole, ROLE_CONFIGS } from '../services/chatService';
 import { Tool, CustomTool, BUILT_IN_TOOLS } from '../services/toolService';
 
 /**
@@ -37,6 +37,11 @@ interface Project {
   description?: string;
   files: PDFFile[];
   createdAt: Date;
+}
+
+type ModifiedBuiltInRoleType = {
+  originalRole: AssistantRole;
+  config: RoleConfig;
 }
 
 /**
@@ -64,14 +69,49 @@ interface Store {
   deleteProject: (id: string) => void;
   getCurrentProject: () => Project | null;
   setCurrentProject: (id: string) => void;
+  initializeDefaultProject: () => void;
   
   // File management actions
   addFileToProject: (projectId: string, file: PDFFile) => void;
   removeFileFromProject: (projectId: string, fileId: string) => void;
   moveFileBetweenProjects: (sourceProjectId: string, targetProjectId: string, fileId: string) => void;
   copyFileBetweenProjects: (sourceProjectId: string, targetProjectId: string, fileId: string) => void;
-  
-  // ... continue with other interface properties and methods ...
+
+  // Role management
+  customRoles: CustomRole[];
+  modifiedBuiltInRoles: ModifiedBuiltInRoleType[];
+  addCustomRole: (role: CustomRole) => void;
+  updateCustomRole: (id: string, role: Partial<CustomRole>) => void;
+  deleteCustomRole: (id: string) => void;
+  updateBuiltInRole: (role: AssistantRole, config: Partial<RoleConfig>) => void;
+  resetBuiltInRole: (role: AssistantRole) => void;
+  getBuiltInRoleConfig: (role: AssistantRole) => RoleConfig;
+
+  // Tool management
+  customTools: CustomTool[];
+  modifiedBuiltInTools: Record<string, Tool>;
+  toolApiKeys: Record<string, string>;
+  addCustomTool: (tool: CustomTool) => void;
+  updateCustomTool: (id: string, tool: Partial<CustomTool>) => void;
+  deleteCustomTool: (id: string) => void;
+  updateBuiltInTool: (id: string, config: Partial<Tool>) => void;
+  resetBuiltInTool: (id: string) => void;
+  setToolApiKey: (toolId: string, apiKey: string) => void;
+  getToolApiKey: (toolId: string) => string;
+  isToolEnabled: (toolId: string) => boolean;
+  toggleTool: (toolId: string) => void;
+
+  // API Keys
+  apiKey: string;
+  setApiKey: (key: string) => void;
+  geminiKey: string;
+  setGeminiKey: (key: string) => void;
+  githubToken: string;
+  setGithubToken: (token: string) => void;
+
+  // Snippets management
+  snippets: any[];
+  setSnippets: (snippets: any[]) => void;
 }
 
 const DEFAULT_PROJECT_ID = 'default-project';
@@ -243,11 +283,10 @@ export const useStore = create<Store>()(
         set({ isScopusSearchModalOpen: false });
       },
 
-      setPdfCache: (fileId, pdfDocument) => {
-        // Implement LRU cache with a size limit
+      setPdfCache: (fileId: string, pdfDocument: unknown) => {
         set((state) => {
           const cache = { ...state.pdfCache };
-          const maxCacheSize = 5; // Maximum number of PDFs to cache
+          const maxCacheSize = 5;
           
           if (Object.keys(cache).length >= maxCacheSize) {
             const oldestFileId = Object.keys(cache)[0];
@@ -263,12 +302,12 @@ export const useStore = create<Store>()(
         });
       },
 
-      getPdfFromCache: (fileId) => {
+      getPdfFromCache: (fileId: string) => {
         const { pdfCache } = get();
         return pdfCache[fileId] || null;
       },
 
-      setCurrentPdfState: (newState) => {
+      setCurrentPdfState: (newState: Partial<Store['currentPdfState']>) => {
         set((state) => ({
           currentPdfState: {
             ...state.currentPdfState,
@@ -292,23 +331,23 @@ export const useStore = create<Store>()(
       toolApiKeys: {},
 
       // Tool management functions
-      addCustomTool: (tool) => set((state) => ({
+      addCustomTool: (tool: CustomTool) => set((state) => ({
         customTools: [...state.customTools, tool]
       })),
 
-      updateCustomTool: (id, tool) => set((state) => ({
+      updateCustomTool: (id: string, tool: Partial<CustomTool>) => set((state) => ({
         customTools: state.customTools.map((t) => 
           t.id === id ? { ...t, ...tool } : t
         )
       })),
 
-      deleteCustomTool: (id) => set((state) => ({
+      deleteCustomTool: (id: string) => set((state) => ({
         customTools: state.customTools.filter((t) => t.id !== id)
       })),
 
-      getCustomTool: (id) => get().customTools.find((t) => t.id === id),
+      getCustomTool: (id: string) => get().customTools.find((t) => t.id === id),
 
-      updateBuiltInTool: (id, config) => set((state) => ({
+      updateBuiltInTool: (id: string, config: Partial<Tool>) => set((state) => ({
         modifiedBuiltInTools: {
           ...state.modifiedBuiltInTools,
           [id]: {
@@ -319,18 +358,18 @@ export const useStore = create<Store>()(
         }
       })),
 
-      resetBuiltInTool: (id) => set((state) => {
+      resetBuiltInTool: (id: string) => set((state) => {
         const { [id]: _, ...rest } = state.modifiedBuiltInTools;
         return { modifiedBuiltInTools: rest };
       }),
 
-      setToolApiKey: (toolId, apiKey) => set((state) => ({
+      setToolApiKey: (toolId: string, apiKey: string) => set((state) => ({
         toolApiKeys: { ...state.toolApiKeys, [toolId]: apiKey }
       })),
 
-      getToolApiKey: (toolId) => get().toolApiKeys[toolId] || '',
+      getToolApiKey: (toolId: string) => get().toolApiKeys[toolId] || '',
 
-      isToolEnabled: (toolId) => {
+      isToolEnabled: (toolId: string) => {
         const state = get();
         const customTool = state.customTools.find(t => t.id === toolId);
         if (customTool) return customTool.isEnabled;
@@ -341,7 +380,7 @@ export const useStore = create<Store>()(
         return BUILT_IN_TOOLS[toolId]?.isEnabled || false;
       },
 
-      toggleTool: (toolId) => {
+      toggleTool: (toolId: string) => {
         const state = get();
         const isEnabled = !state.isToolEnabled(toolId);
         
@@ -359,36 +398,40 @@ export const useStore = create<Store>()(
       modifiedBuiltInRoles: [],
 
       // Role management functions
-      addCustomRole: (role) => set((state) => ({
+      addCustomRole: (role: CustomRole) => set((state) => ({
         customRoles: [...state.customRoles, role]
       })),
 
-      updateCustomRole: (id, role) => set((state) => ({
+      updateCustomRole: (id: string, role: Partial<CustomRole>) => set((state) => ({
         customRoles: state.customRoles.map((r) => 
           r.id === id ? { ...r, ...role } : r
         )
       })),
 
-      deleteCustomRole: (id) => set((state) => ({
+      deleteCustomRole: (id: string) => set((state) => ({
         customRoles: state.customRoles.filter((r) => r.id !== id)
       })),
 
-      updateBuiltInRole: (role, config) => set((state) => ({
+      updateBuiltInRole: (role: AssistantRole, config: Partial<RoleConfig>) => set((state) => ({
         modifiedBuiltInRoles: [
           ...state.modifiedBuiltInRoles.filter(r => r.originalRole !== role),
-          { originalRole: role, config }
+          { originalRole: role, config: { ...ROLE_CONFIGS[role], ...config } }
         ]
       })),
 
-      resetBuiltInRole: (role) => set((state) => ({
+      resetBuiltInRole: (role: AssistantRole) => set((state) => ({
         modifiedBuiltInRoles: state.modifiedBuiltInRoles.filter(r => r.originalRole !== role)
       })),
 
-      getBuiltInRoleConfig: (role) => {
+      getBuiltInRoleConfig: (role: AssistantRole) => {
         const { modifiedBuiltInRoles } = get();
         const modified = modifiedBuiltInRoles.find(r => r.originalRole === role);
         return modified ? modified.config : ROLE_CONFIGS[role];
       },
+
+      // Snippets management
+      snippets: [],
+      setSnippets: (snippets) => set({ snippets }),
     }),
     {
       name: 'pdf-assistant-storage',

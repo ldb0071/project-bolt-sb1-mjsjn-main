@@ -1,1 +1,0 @@
-Minjung Kim ∗ Samsung SDS Seoul, Republic of Korea mj100.kim@samsung.com

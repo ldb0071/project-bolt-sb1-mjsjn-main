@@ -1,1 +1,0 @@
-Table 3: Detailed characteristics of the benchmark datasets we use for our experimentsTable 4: The best hyperparameters of MadSGM in each dataset

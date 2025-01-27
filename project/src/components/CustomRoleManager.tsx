@@ -13,8 +13,10 @@ import {
   Trash2,
   Edit2,
   RotateCcw,
-  Info
+  Info,
+  Sparkles
 } from 'lucide-react';
+import { sendChatMessage, ModelId, AVAILABLE_MODELS } from '../services/chatService';
 
 interface RoleFormData {
   id: string;
@@ -47,6 +49,7 @@ export function CustomRoleManager() {
     deleteCustomRole,
     updateBuiltInRole,
     resetBuiltInRole,
+    geminiKey
   } = useStore();
 
   const [formData, setFormData] = useState<RoleFormData>(defaultFormData);
@@ -55,6 +58,9 @@ export function CustomRoleManager() {
   const [showForm, setShowForm] = useState(false);
   const [expandedRole, setExpandedRole] = useState<string | null>(null);
   const [showHelp, setShowHelp] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generationPrompt, setGenerationPrompt] = useState('');
+  const [selectedModel, setSelectedModel] = useState<ModelId>('gemini-1.5-flash');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -140,6 +146,80 @@ export function CustomRoleManager() {
       isDisabled: true
     });
     toast.success('Role disabled successfully');
+  };
+
+  const handleGenerateRole = async () => {
+    try {
+      setIsGenerating(true);
+      
+      const prompt = `You are a role configuration assistant. Generate a detailed role configuration based on the following request.
+
+IMPORTANT: Your response must be a JSON object WITHOUT any markdown formatting or code blocks. The JSON must follow this exact structure:
+{
+  "title": "A clear, descriptive title for the role",
+  "description": "A comprehensive description explaining the role's purpose and capabilities",
+  "systemPrompt": "A detailed system prompt that defines the role's behavior, knowledge, and limitations. This should be comprehensive and include:
+    - Clear definition of the role's expertise and capabilities
+    - Specific guidelines for interaction and response style
+    - Any relevant domain knowledge or specializations
+    - Ethical guidelines and limitations
+    - Response format preferences
+    - Error handling approach
+    - Any other relevant behavioral instructions"
+}
+
+Request: ${generationPrompt}
+
+REMEMBER: Return only the raw JSON object without any additional formatting or text.`;
+
+      const response = await sendChatMessage(
+        [{
+          id: crypto.randomUUID(),
+          role: 'user',
+          content: prompt
+        }],
+        geminiKey,
+        'default',
+        selectedModel
+      );
+
+      // Clean and parse the response
+      let cleanedContent = response.content;
+      
+      // Try to extract JSON if it's wrapped in code blocks
+      const jsonMatch = cleanedContent.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        cleanedContent = jsonMatch[0];
+      }
+
+      try {
+        const roleData = JSON.parse(cleanedContent);
+        
+        // Validate required fields
+        if (!roleData.title || !roleData.description || !roleData.systemPrompt) {
+          throw new Error('Invalid or missing required fields in generated role');
+        }
+        
+        setFormData({
+          ...formData,
+          title: roleData.title,
+          description: roleData.description,
+          systemPrompt: roleData.systemPrompt
+        });
+        
+        toast.success('Role configuration generated successfully');
+      } catch (parseError) {
+        console.error('Failed to parse generated role:', parseError);
+        console.error('Raw content:', response.content);
+        console.error('Cleaned content:', cleanedContent);
+        throw new Error('Failed to parse the generated role. Please try again.');
+      }
+    } catch (error) {
+      console.error('Failed to generate role:', error);
+      toast.error('Failed to generate role. Please try again.');
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   return (
@@ -244,6 +324,57 @@ export function CustomRoleManager() {
             onSubmit={handleSubmit}
             className="space-y-4 bg-white dark:bg-navy-800 rounded-lg p-6 border border-gray-200 dark:border-navy-700"
           >
+            <div className="mb-6 space-y-4 rounded-lg border border-navy-600 bg-navy-900/50 p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-primary-400">
+                  <Bot className="h-5 w-5" />
+                  <h3 className="text-sm font-medium">AI Role Generation</h3>
+                </div>
+                <select
+                  value={selectedModel}
+                  onChange={(e) => setSelectedModel(e.target.value as ModelId)}
+                  className="rounded-lg border border-navy-600 bg-navy-900/50 px-3 py-1 text-sm text-white focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/50"
+                >
+                  {Object.entries(AVAILABLE_MODELS)
+                    .filter(([_, config]) => config.type === 'gemini')
+                    .map(([id, config]) => (
+                      <option key={id} value={id}>
+                        {config.name}
+                      </option>
+                    ))}
+                </select>
+              </div>
+              <textarea
+                value={generationPrompt}
+                onChange={(e) => setGenerationPrompt(e.target.value)}
+                rows={3}
+                className="w-full rounded-lg border border-navy-600 bg-navy-900/50 px-4 py-2 text-white placeholder-gray-400 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/50"
+                placeholder="Describe the role you want to generate (e.g., 'Create a role for a Python coding expert who specializes in data science and machine learning')"
+              />
+              <button
+                type="button"
+                onClick={handleGenerateRole}
+                disabled={!generationPrompt || isGenerating}
+                className={`flex w-full items-center justify-center gap-2 rounded-lg py-2 text-sm font-medium transition-colors ${
+                  !generationPrompt || isGenerating
+                    ? 'cursor-not-allowed bg-navy-700 text-gray-400'
+                    : 'bg-primary-500 text-white hover:bg-primary-600'
+                }`}
+              >
+                {isGenerating ? (
+                  <>
+                    <span className="animate-spin">⚡</span>
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="h-4 w-4" />
+                    Generate Role
+                  </>
+                )}
+              </button>
+            </div>
+
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Role Title

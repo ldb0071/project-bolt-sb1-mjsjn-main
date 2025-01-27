@@ -12,7 +12,10 @@ import {
   Menu,
   LineChart,
   FileSearch,
-  Database
+  Database,
+  Code,
+  ListTodo,
+  Network
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -48,6 +51,24 @@ export function Layout({ children }: { children: React.ReactNode }) {
       label: 'AI Trending', 
       path: '/trending',
       isActive: location.pathname === '/trending',
+    },
+    { 
+      icon: Code, 
+      label: 'Code Snippets', 
+      path: '/code-snippets',
+      isActive: location.pathname === '/code-snippets',
+    },
+    { 
+      icon: ListTodo, 
+      label: 'Todo Planner', 
+      path: '/todo-planner',
+      isActive: location.pathname === '/todo-planner',
+    },
+    {
+      icon: Network,
+      label: 'Deep Learning Flow',
+      path: '/deep-learning-flow',
+      isActive: location.pathname === '/deep-learning-flow',
     },
     { 
       icon: Settings, 

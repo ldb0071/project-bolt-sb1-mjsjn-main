@@ -17,6 +17,15 @@ import sys
 from rag_service import RAGService
 import logging
 from openai import OpenAI
+import tempfile
+import subprocess
+import zipfile
+import io
+import json
+import datetime
+from enhanced_document_processor import EnhancedDocumentProcessor
+import pdfplumber
+from pypdf import PdfWriter, PdfReader
 
 # Load environment variables
 load_dotenv()
@@ -75,6 +84,9 @@ class ChannelResponse(BaseModel):
     channels: List[Channel]
     total_results: int
 
+class CodeExecutionRequest(BaseModel):
+    code: str
+
 # Initialize YouTube API client
 YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY')
 if not YOUTUBE_API_KEY:
@@ -103,7 +115,8 @@ rag_service = None
 def get_rag_service():
     global rag_service
     if rag_service is None:
-        rag_service = RAGService(github_token="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")
+        from rag_service import GraphRAGService
+        rag_service = GraphRAGService(github_token="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")
     return rag_service
 
 # Create storage directories if they don't exist
@@ -356,13 +369,14 @@ async def delete_project(project_name: str):
         raise HTTPException(status_code=500, detail="Failed to delete project")
 
 @app.get("/api/projects/{project_name}/{file_type}/{file_name}")
-async def get_pdf(project_name: str, file_type: str, file_name: str):
+async def get_pdf(project_name: str, file_type: str, file_name: str, page: Optional[int] = None):
     print(f"\n=== Received get PDF request ===")
     print(f"Project name: {project_name}")
     print(f"File type: {file_type}")
     print(f"File name: {file_name}")
+    print(f"Page requested: {page}")
     
-    if file_type not in ["uploaded", "downloaded"]:
+    if file_type not in ["uploaded", "downloaded", "markdown"]:
         raise HTTPException(status_code=400, detail="Invalid file type")
     
     # Create a safe project name for the folder
@@ -375,18 +389,67 @@ async def get_pdf(project_name: str, file_type: str, file_name: str):
     base_dir = uploaded_dir if file_type == "uploaded" else downloaded_dir
     file_path = os.path.join(base_dir, file_name)
     
+    print(f"Looking for PDF at: {file_path}")
+    
     if not os.path.exists(file_path):
         print(f"File not found: {file_path}")
         raise HTTPException(status_code=404, detail="File not found")
     
-    print(f"Serving file: {file_path}")
-    print("=== Get PDF completed ===\n")
-    
-    return FileResponse(
-        file_path,
-        media_type="application/pdf",
-        filename=file_name
-    )
+    try:
+        if page is not None:
+            print(f"Attempting to extract page {page}")
+            # If page is specified, return only that page
+            with open(file_path, 'rb') as file:
+                pdf_writer = PdfWriter()
+                pdf_reader = PdfReader(file)
+                
+                total_pages = len(pdf_reader.pages)
+                print(f"PDF has {total_pages} pages")
+                
+                if page < 1 or page > total_pages:
+                    print(f"Invalid page number {page}, valid range is 1-{total_pages}")
+                    raise HTTPException(status_code=400, detail=f"Invalid page number. PDF has {total_pages} pages")
+                
+                print(f"Extracting page {page}")
+                pdf_writer.add_page(pdf_reader.pages[page - 1])
+                
+                # Write to bytes buffer
+                buffer = io.BytesIO()
+                pdf_writer.write(buffer)
+                buffer.seek(0)
+                
+                headers = {
+                    "Content-Type": "application/pdf",
+                    "Content-Disposition": f"inline; filename={file_name}",
+                    "Cache-Control": "no-cache"
+                }
+                
+                print(f"Successfully extracted page {page}")
+                return Response(
+                    content=buffer.getvalue(),
+                    media_type="application/pdf",
+                    headers=headers
+                )
+        
+        # If no page specified, return the entire PDF
+        print(f"Serving entire PDF file: {file_path}")
+        print("=== Get PDF completed ===\n")
+        
+        headers = {
+            "Content-Type": "application/pdf",
+            "Content-Disposition": f"inline; filename={file_name}",
+            "Cache-Control": "no-cache"
+        }
+        
+        return FileResponse(
+            file_path,
+            media_type="application/pdf",
+            headers=headers
+        )
+    except Exception as e:
+        print(f"Error processing PDF: {str(e)}")
+        logger.error(f"Error serving PDF: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/youtube/search")
 async def search_youtube_videos(
@@ -633,163 +696,131 @@ async def convert_pdf_to_markdown(project_name: str, file_type: str, file_name: 
     # Create a safe project name for the folder
     safe_project_name = project_name.replace(" ", "_").replace("/", "_").replace("\\", "_")
     
-    # Get project directories using project name
+    # Get project directories
     project_dir, uploaded_dir, downloaded_dir = get_project_dirs(safe_project_name)
     
     # Choose the correct directory based on file type
     base_dir = uploaded_dir if file_type == "uploaded" else downloaded_dir
     file_path = os.path.join(base_dir, file_name)
     
-    # Create markdown directory if it doesn't exist
+    # Create markdown and images directories
     markdown_dir = os.path.join(project_dir, "markdown")
-    if not os.path.exists(markdown_dir):
-        os.makedirs(markdown_dir)
-    
-    # Generate markdown filename
-    markdown_base_name = os.path.splitext(file_name)[0]
-    markdown_path = os.path.join(markdown_dir, f"{markdown_base_name}")
-    
-    # Check if markdown version already exists
-    if os.path.exists(f"{markdown_path}_page_1.md"):
-        print(f"Markdown version already exists at: {markdown_path}")
-        # Read and combine all markdown pages
-        markdown_content = []
-        page_num = 1
-        while os.path.exists(f"{markdown_path}_page_{page_num}.md"):
-            with open(f"{markdown_path}_page_{page_num}.md", 'r', encoding='utf-8') as f:
-                markdown_content.append(f.read())
-            page_num += 1
-        
-        return {
-            "content": markdown_content,
-            "total_pages": page_num - 1,
-            "base_path": f"/projects/{safe_project_name}/markdown/{markdown_base_name}"
-        }
-    
-    print(f"Full file path: {file_path}")
+    images_dir = os.path.join(project_dir, "images")
+    os.makedirs(markdown_dir, exist_ok=True)
+    os.makedirs(images_dir, exist_ok=True)
     
     if not os.path.exists(file_path):
         print(f"File not found: {file_path}")
         raise HTTPException(status_code=404, detail="File not found")
-    
+        
     try:
-        # Check if file is readable
-        if not os.access(file_path, os.R_OK):
-            print(f"File is not readable: {file_path}")
-            raise HTTPException(status_code=500, detail="File is not readable")
-
-        # Check file size
-        file_size = os.path.getsize(file_path)
-        print(f"File size: {file_size} bytes")
+        # Process the PDF
+        processor = EnhancedDocumentProcessor()
+        result = await processor.process_pdf(file_path, project_name)
         
-        if file_size == 0:
-            print("File is empty")
-            raise HTTPException(status_code=400, detail="File is empty")
-            
-        # Initialize the document converter
-        try:
-            print("Attempting to initialize DocumentConverter...")
-            converter = DocumentConverter()
-            print("DocumentConverter initialized successfully")
-        except Exception as e:
-            error_traceback = traceback.format_exc()
-            print(f"Error initializing DocumentConverter:\n{error_traceback}")
-            raise HTTPException(
-                status_code=500, 
-                detail=f"Failed to initialize document converter: {str(e)}\nTraceback: {error_traceback}"
-            )
-        
-        # Convert PDF to Markdown
-        try:
-            print("Starting PDF to Markdown conversion...")
-            # Convert the document using Docling
-            result = converter.convert(file_path)
-            doc = result.document
-            
-            # Get the total number of pages from the PDF
-            import pdfplumber
-            with pdfplumber.open(file_path) as pdf:
-                total_pages = len(pdf.pages)
-            
-            print(f"PDF has {total_pages} pages")
-            
-            # Get the full markdown content
-            markdown_content = doc.export_to_markdown()
-            
-            # Split content by page markers or create balanced pages
-            pages = []
-            
-            # First try to split by page markers if they exist
-            page_markers = [f"\n\nPage {i+1}\n" for i in range(total_pages)]
-            content_with_markers = markdown_content
-            
-            # Add page markers to the content if they don't exist
-            if not any(marker in markdown_content for marker in page_markers):
-                # Split content into paragraphs
-                paragraphs = markdown_content.split('\n\n')
-                paragraphs_per_page = max(1, len(paragraphs) // total_pages)
-                
-                # Distribute paragraphs across pages
-                for i in range(total_pages):
-                    start_idx = i * paragraphs_per_page
-                    end_idx = start_idx + paragraphs_per_page if i < total_pages - 1 else len(paragraphs)
-                    page_content = '\n\n'.join(paragraphs[start_idx:end_idx])
-                    if page_content.strip():
-                        pages.append(f"Page {i+1}\n\n{page_content}")
-            else:
-                # Split by existing page markers
-                current_page = []
-                current_page_content = []
-                
-                for line in markdown_content.split('\n'):
-                    if any(marker.strip() in line for marker in page_markers):
-                        if current_page_content:
-                            pages.append('\n'.join(current_page_content))
-                            current_page_content = []
-                    current_page_content.append(line)
-                
-                # Add the last page
-                if current_page_content:
-                    pages.append('\n'.join(current_page_content))
-            
-            # Ensure we have exactly the same number of pages as the PDF
-            while len(pages) < total_pages:
-                pages.append(f"Page {len(pages)+1}\n\n[Empty page]")
-            
-            # Save each page separately
-            for i, page_content in enumerate(pages, 1):
-                if page_content.strip():  # Only save non-empty pages
-                    page_file_path = f"{markdown_path}_page_{i}.md"
-                    with open(page_file_path, 'w', encoding='utf-8') as f:
-                        f.write(page_content.strip())
-                    print(f"Saved page {i} to {page_file_path} (length: {len(page_content)} chars)")
-            
-            print(f"Successfully converted PDF to {len(pages)} markdown pages")
-            print("=== Conversion completed ===\n")
-            
-            return {
-                "content": pages,
-                "total_pages": len(pages),
-                "base_path": f"/projects/{safe_project_name}/markdown/{markdown_base_name}"
-            }
-            
-        except Exception as e:
-            error_traceback = traceback.format_exc()
-            print(f"Error during conversion:\n{error_traceback}")
-            raise HTTPException(
-                status_code=500, 
-                detail=f"Failed to convert PDF: {str(e)}\nTraceback: {error_traceback}"
-            )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        error_traceback = traceback.format_exc()
-        print(f"Unexpected error converting PDF to Markdown:\n{error_traceback}")
-        raise HTTPException(
-            status_code=500, 
-            detail=f"Unexpected error: {str(e)}\nTraceback: {error_traceback}"
+        # Split the markdown content into pages
+        pages = await processor.pdf_processor.split_into_pages(
+            result["markdown_content"],
+            result["total_pages"]
         )
+        
+        # Save each page separately with enhanced metadata
+        markdown_base_name = os.path.splitext(file_name)[0]
+        saved_pages = []
+        
+        for i, (page_content, page_data) in enumerate(zip(pages, result["pages"]), 1):
+            if page_content.strip():
+                # Create structured page content with sections
+                structured_content = []
+                
+                # Add page header
+                structured_content.append(f"# Page {i}\n")
+                
+                # Add page metadata section
+                metadata_section = ["## Page Information", ""]
+                metadata = page_data["metadata"]
+                metadata_section.extend([
+                    f"- **Type**: {metadata.get('content_type', 'main_content')}",
+                    f"- **Word Count**: {metadata.get('word_count', '0')}",
+                    f"- **Has Tables**: {metadata.get('has_tables', 'False')}",
+                    f"- **Has Figures**: {metadata.get('has_figures', 'False')}",
+                    ""
+                ])
+                structured_content.extend(metadata_section)
+                
+                # Add page content section
+                structured_content.extend(["## Content", "", page_content.strip(), ""])
+                
+                # Add visual content section if available
+                page_images = [img for img in result.get("page_images", []) if img["page"] == i]
+                page_figures = [fig for fig in result.get("figures", []) if fig["page"] == i]
+                
+                if page_images or page_figures:
+                    structured_content.append("## Visual Content\n")
+                    
+                    # Add page preview
+                    if page_images:
+                        structured_content.extend([
+                            "### Page Preview",
+                            "",
+                            *[f"![Page {i}](/projects/{safe_project_name}/images/{img['filename']})" 
+                              for img in page_images],
+                            ""
+                        ])
+                    
+                    # Add figures section
+                    if page_figures:
+                        structured_content.extend(["### Figures", ""])
+                        for fig in page_figures:
+                            caption = fig.get('caption', f"Figure from page {i}")
+                            structured_content.extend([
+                                f"![{caption}](/projects/{safe_project_name}/figures/{fig['filename']})",
+                                f"*{caption}*" if fig.get('caption') else "",
+                                ""
+                            ])
+                
+                # Add tables section if available
+                tables = page_data["elements"].get("tables", [])
+                if tables:
+                    structured_content.extend(["## Tables", ""])
+                    for idx, table in enumerate(tables, 1):
+                        structured_content.extend([
+                            f"### Table {idx}",
+                            "",
+                            _format_table_content(table["content"]),
+                            ""
+                        ])
+                
+                # Join all sections
+                final_content = "\n".join(structured_content)
+                
+                # Save markdown with structured content
+                page_file_path = os.path.join(markdown_dir, f"{markdown_base_name}_page_{i}.md")
+                with open(page_file_path, 'w', encoding='utf-8') as f:
+                    f.write(final_content)
+                
+                # Add page info to saved pages
+                saved_pages.append({
+                    "number": i,
+                    "content": final_content,
+                    "metadata": page_data["metadata"],
+                    "elements": page_data["elements"],
+                    "layout": page_data["layout"],
+                    "images": page_images,
+                    "figures": page_figures
+                })
+        
+        return {
+            'pages': saved_pages,
+            'markdown': result["markdown_content"],
+            'total_pages': len(pages),
+            'base_path': f"/projects/{safe_project_name}/markdown/{markdown_base_name}",
+            'images_path': f"/projects/{safe_project_name}/images"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error during conversion: {str(e)}")
+        raise
 
 @app.post("/api/project/{project_name}/convert-all-pdfs")
 async def convert_all_pdfs(project_name: str):
@@ -924,14 +955,14 @@ async def process_project_markdown(project_name: str):
 @app.post("/api/rag/{project_name}/chat")
 async def chat_with_project(
     project_name: str,
-    query: str = Form(...),
-    chat_history: Optional[List[Dict[str, str]]] = Form(None)
+    query: str = Body(...),
+    chat_history: Optional[List[Dict[str, str]]] = Body(None)
 ):
     """Chat with the project's knowledge base."""
     try:
-        rag = get_rag_service()
-        response = await rag.chat(project_name, query, chat_history)
-        return response
+        service = get_rag_service()
+        # Only pass project_name and query to the chat method
+        return await service.chat(project_name, query)
     except Exception as e:
         logger.error(f"Error in chat: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -961,13 +992,16 @@ async def get_embeddings_visualization(project_name: str):
 @app.post("/api/chat")
 async def chat(
     request: Request,
-    messages: List[Dict[str, str]] = Body(...),
-    model: str = Body(...)
+    project_name: str = Body(...),
+    query: str = Body(...),
+    history: List[Dict[str, str]] = Body(None),
+    model: str = Body("gpt-4o")
 ):
     """Handle chat requests for Azure OpenAI models."""
     try:
-        logger.info(f"Received chat request with model: {model}")
-        logger.info(f"Messages: {messages}")
+        logger.info(f"Received chat request for project: {project_name}")
+        logger.info(f"Query: {query}")
+        logger.info(f"Using model: {model}")
         
         # Get GitHub token from Authorization header
         auth_header = request.headers.get('Authorization')
@@ -976,38 +1010,343 @@ async def chat(
             raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
         github_token = auth_header.replace('Bearer ', '')
         
-        # Use GitHub token as API key
-        client = OpenAI(
-            base_url="https://models.inference.ai.azure.com",
-            api_key=github_token,
-        )
-
-        logger.info("Initialized OpenAI client, sending request to Azure...")
-        logger.info(f"Using model: gpt-4o")
-
-        try:
-            response = client.chat.completions.create(
-                messages=messages,
-                temperature=1.0,
-                top_p=1.0,
-                max_tokens=1000,
-                model="gpt-4o"  # Use the fixed model name
-            )
-            
-            logger.info("Received response from Azure")
-            
-            # Extract and return the response
-            content = response.choices[0].message.content
-            return {"content": content}
-
-        except Exception as api_error:
-            logger.error(f"Azure API error: {api_error}")
-            raise HTTPException(status_code=500, detail=f"Azure OpenAI API error: {str(api_error)}")
-
-    except HTTPException:
-        raise
+        # Initialize RAG service with GitHub token
+        rag_service = RAGService(github_token=github_token)
+        
+        # Call RAG service with model parameter
+        response = await rag_service.chat(project_name, query, history, model)
+        
+        return response
     except Exception as e:
         logger.error(f"Error in chat endpoint: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/execute-code")
+async def execute_code(request: CodeExecutionRequest):
+    print(f"\n=== Received code execution request ===")
+    print(f"Code to execute:\n{request.code}")
+    
+    try:
+        # Create a temporary directory for code execution
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Write code to a file
+            code_file = os.path.join(temp_dir, "code.py")
+            with open(code_file, "w") as f:
+                # Add print statement to show the result
+                modified_code = request.code
+                if not modified_code.strip().startswith("print("):
+                    # Add print statements to show any variables or expressions
+                    lines = modified_code.split('\n')
+                    last_line = lines[-1].strip()
+                    if last_line and not last_line.startswith(('import ', 'from ', 'def ', 'class ', '#', 'print')):
+                        lines[-1] = f"print('Result:', {last_line})"
+                    modified_code = '\n'.join(lines)
+                f.write(modified_code)
+            
+            print(f"Modified code to execute:\n{modified_code}")
+            
+            try:
+                if os.name == 'nt':  # Windows
+                    # Create a batch script to handle conda initialization and execution
+                    batch_file = os.path.join(temp_dir, "run_script.bat")
+                    with open(batch_file, "w") as f:
+                        f.write('@echo off\n')
+                        f.write('call conda activate project-bolt-2\n')
+                        f.write(f'python "{code_file}"\n')
+
+                    # Execute the batch script
+                    result = subprocess.run(
+                        ['cmd', '/c', batch_file],
+                        capture_output=True,
+                        text=True,
+                        timeout=10,
+                        env=os.environ.copy()
+                    )
+                else:  # Linux/Mac
+                    result = subprocess.run(
+                        ['bash', '-c', f'conda activate project-bolt-2 && python "{code_file}"'],
+                        capture_output=True,
+                        text=True,
+                        timeout=10,
+                        env=os.environ.copy()
+                    )
+
+                print(f"Execution stdout:\n{result.stdout}")
+                if result.stderr:
+                    print(f"Execution stderr:\n{result.stderr}")
+
+                return {
+                    "output": result.stdout,
+                    "error": result.stderr
+                }
+            except subprocess.TimeoutExpired:
+                error_msg = "Code execution timed out after 10 seconds"
+                print(f"Error: {error_msg}")
+                return {
+                    "output": "",
+                    "error": error_msg
+                }
+            except Exception as e:
+                error_msg = f"Error executing code: {str(e)}"
+                print(f"Error: {error_msg}")
+                return {
+                    "output": "",
+                    "error": error_msg
+                }
+    except Exception as e:
+        error_msg = f"Error in code execution: {str(e)}"
+        print(f"Error: {error_msg}")
+        raise HTTPException(status_code=500, detail=error_msg)
+
+@app.get("/api/rag/{project_name}/graph")
+async def get_graph_visualization(project_name: str):
+    """Get visualization data for the knowledge graph."""
+    try:
+        rag = get_rag_service()
+        if not hasattr(rag, 'knowledge_graph') or rag.knowledge_graph is None:
+            return {"nodes": [], "links": [], "metadata": {"total_nodes": 0, "total_edges": 0}}
+            
+        # Get the graph data
+        graph = rag.knowledge_graph.graph
+        
+        # Convert NetworkX graph to visualization format
+        nodes = []
+        links = []
+        
+        # Add nodes with enhanced metadata
+        for node_id, node_data in graph.nodes(data=True):
+            node_type = node_data.get('type', 'unknown')
+            score = node_data.get('score', 1.0)
+            
+            # Create node with visualization attributes
+            node = {
+                "id": str(node_id),
+                "label": str(node_id)[:30] + "..." if len(str(node_id)) > 30 else str(node_id),
+                "type": node_type,
+                "score": score,
+                "size": 10 + (score * 5),  # Size based on score
+                # Color scheme matching the image
+                "color": "#4CAF50" if node_type == "document" else 
+                        "#2196F3" if node_type == "entity" else
+                        "#FFC107" if node_type == "concept" else
+                        "#9C27B0" if node_type == "citation" else "#757575",
+                "metadata": {
+                    "full_text": str(node_id),
+                    "type": node_type,
+                    "score": score,
+                    **{k: v for k, v in node_data.items() if k not in ['type', 'score']}
+                }
+            }
+            nodes.append(node)
+        
+        # Add links with relationship types and weights
+        for source, target, edge_data in graph.edges(data=True):
+            # Get relationship type and weight
+            rel_type = edge_data.get('type', 'related')
+            weight = edge_data.get('weight', 1.0)
+            score = edge_data.get('score', 1.0)
+            
+            link = {
+                "source": str(source),
+                "target": str(target),
+                "type": rel_type,
+                "label": rel_type,
+                "value": weight,
+                "score": score,
+                # Line width based on weight/score
+                "width": 1 + (weight * 2),
+                # Color based on relationship type
+                "color": "#4CAF50" if rel_type == "contains" else
+                        "#2196F3" if rel_type == "references" else
+                        "#FFC107" if rel_type == "similar" else "#757575",
+                "metadata": {
+                    "type": rel_type,
+                    "weight": weight,
+                    "score": score,
+                    **{k: v for k, v in edge_data.items() if k not in ['type', 'weight', 'score']}
+                }
+            }
+            links.append(link)
+        
+        # Add graph metadata
+        metadata = {
+            "total_nodes": len(nodes),
+            "total_edges": len(links),
+            "node_types": {
+                node_type: len([n for n in nodes if n["type"] == node_type])
+                for node_type in set(n["type"] for n in nodes)
+            },
+            "edge_types": {
+                edge_type: len([l for l in links if l["type"] == edge_type])
+                for edge_type in set(l["type"] for l in links)
+            }
+        }
+        
+        return {
+            "nodes": nodes,
+            "links": links,
+            "metadata": metadata
+        }
+    except Exception as e:
+        logger.error(f"Error getting graph visualization data: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/projects/{project_name}/download-zip")
+async def download_project_files(project_name: str):
+    """Download all files in a project as a ZIP archive."""
+    print(f"\n=== Received project download request ===")
+    print(f"Project name: {project_name}")
+    
+    if not project_name:
+        raise HTTPException(status_code=400, detail="Project name cannot be empty")
+    
+    # Create a safe project name for the folder
+    safe_project_name = project_name.replace(" ", "_").replace("/", "_").replace("\\", "_")
+    
+    # Get project directories
+    project_dir, uploaded_dir, downloaded_dir = get_project_dirs(safe_project_name)
+    
+    if not os.path.exists(project_dir):
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    try:
+        # Create metadata dictionary
+        metadata = {
+            "project_name": project_name,
+            "created_at": str(datetime.datetime.now()),
+            "files": {
+                "uploaded": [],
+                "downloaded": []
+            }
+        }
+        
+        # Create a ZIP file in memory
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            # Add files from uploaded directory
+            if os.path.exists(uploaded_dir):
+                for file_name in os.listdir(uploaded_dir):
+                    file_path = os.path.join(uploaded_dir, file_name)
+                    if os.path.isfile(file_path):
+                        # Add file to ZIP with a path that includes the directory structure
+                        zip_file.write(file_path, f"uploaded/{file_name}")
+                        # Add file info to metadata
+                        file_stat = os.stat(file_path)
+                        metadata["files"]["uploaded"].append({
+                            "name": file_name,
+                            "size": file_stat.st_size,
+                            "created_at": str(datetime.datetime.fromtimestamp(file_stat.st_ctime)),
+                            "modified_at": str(datetime.datetime.fromtimestamp(file_stat.st_mtime))
+                        })
+            
+            # Add files from downloaded directory
+            if os.path.exists(downloaded_dir):
+                for file_name in os.listdir(downloaded_dir):
+                    file_path = os.path.join(downloaded_dir, file_name)
+                    if os.path.isfile(file_path):
+                        # Add file to ZIP with a path that includes the directory structure
+                        zip_file.write(file_path, f"downloaded/{file_name}")
+                        # Add file info to metadata
+                        file_stat = os.stat(file_path)
+                        metadata["files"]["downloaded"].append({
+                            "name": file_name,
+                            "size": file_stat.st_size,
+                            "created_at": str(datetime.datetime.fromtimestamp(file_stat.st_ctime)),
+                            "modified_at": str(datetime.datetime.fromtimestamp(file_stat.st_mtime))
+                        })
+            
+            # Add metadata.json to the ZIP file
+            zip_file.writestr('metadata.json', json.dumps(metadata, indent=2))
+        
+        # Seek to the beginning of the buffer
+        zip_buffer.seek(0)
+        
+        # Return the ZIP file as a response
+        return Response(
+            content=zip_buffer.getvalue(),
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": f'attachment; filename="{safe_project_name}_files.zip"'
+            }
+        )
+    except Exception as e:
+        print(f"Error creating ZIP file: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create ZIP file")
+
+def _format_table_content(table_content: List[List[str]]) -> str:
+    """Format table content into markdown table format"""
+    if not table_content or not table_content[0]:
+        return ""
+    
+    # Create header row
+    header = table_content[0]
+    markdown_table = ["| " + " | ".join(str(cell) for cell in header) + " |", "| " + " | ".join("---" for _ in header) + " |"]
+    
+    # Add data rows
+    for row in table_content[1:]:
+        markdown_table.append("| " + " | ".join(str(cell) for cell in row) + " |")
+    
+    return "\n".join(markdown_table)
+
+@app.get("/api/pdf")
+async def serve_pdf(path: str, page: Optional[int] = None):
+    try:
+        # Ensure the path is within the projects directory
+        abs_path = os.path.abspath(os.path.join(STORAGE_DIR, path.lstrip('/projects/')))
+        if not abs_path.startswith(STORAGE_DIR):
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        if not os.path.exists(abs_path):
+            raise HTTPException(status_code=404, detail="PDF not found")
+            
+        if page is not None:
+            # If page is specified, return only that page
+            try:
+                with open(abs_path, 'rb') as file:
+                    pdf_writer = PdfWriter()
+                    pdf_reader = PdfReader(file)
+                    
+                    if page < 1 or page > len(pdf_reader.pages):
+                        raise HTTPException(status_code=400, detail="Invalid page number")
+                    
+                    # Add the requested page
+                    pdf_writer.add_page(pdf_reader.pages[page - 1])
+                    
+                    # Write to bytes buffer
+                    buffer = io.BytesIO()
+                    pdf_writer.write(buffer)
+                    buffer.seek(0)
+                    
+                    headers = {
+                        "Content-Type": "application/pdf",
+                        "Content-Disposition": f"inline; filename={os.path.basename(abs_path)}",
+                        "Cache-Control": "no-cache"
+                    }
+                    
+                    return Response(
+                        content=buffer.getvalue(),
+                        media_type="application/pdf",
+                        headers=headers
+                    )
+            except Exception as e:
+                logger.error(f"Error extracting page from PDF: {str(e)}")
+                raise HTTPException(status_code=500, detail=f"Error processing PDF: {str(e)}")
+        
+        # If no page specified, return the entire PDF
+        headers = {
+            "Content-Type": "application/pdf",
+            "Content-Disposition": f"inline; filename={os.path.basename(abs_path)}",
+            "Cache-Control": "no-cache"
+        }
+        
+        return FileResponse(
+            abs_path,
+            media_type="application/pdf",
+            headers=headers
+        )
+        
+    except Exception as e:
+        logger.error(f"Error serving PDF: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":

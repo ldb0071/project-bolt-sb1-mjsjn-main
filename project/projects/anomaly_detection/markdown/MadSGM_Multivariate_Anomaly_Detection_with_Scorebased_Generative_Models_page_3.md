@@ -1,1 +1,0 @@
-Sewon Park ∗ Samsung SDS Seoul, Republic of Korea sw0413.park@samsung.com

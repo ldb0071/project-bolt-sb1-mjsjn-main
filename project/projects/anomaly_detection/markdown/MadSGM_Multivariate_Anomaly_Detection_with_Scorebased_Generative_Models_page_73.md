@@ -1,1 +1,0 @@
-Table 2: Comparison of the average number of function evaluations (NFE) between the probability /flow ODE and the reverse SDE.

@@ -10,14 +10,14 @@ class MarkdownDocument(BaseModel):
 class DocumentChunk(BaseModel):
     """Represents a chunk of text from a document."""
     content: str
-    chunk_id: int
+    chunk_id: str
     metadata: Dict[str, str] = Field(default_factory=dict)
 
 class SearchResult(BaseModel):
     """Represents a search result from the vector store."""
     content: str
     source: str
-    chunk_id: int
+    chunk_id: str
     score: float
     metadata: Dict[str, str] = Field(default_factory=dict)
 

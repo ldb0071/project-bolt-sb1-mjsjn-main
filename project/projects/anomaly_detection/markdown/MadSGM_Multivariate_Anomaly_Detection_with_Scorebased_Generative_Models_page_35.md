@@ -1,1 +1,0 @@
-## 2.2 Score-based Generative Models
