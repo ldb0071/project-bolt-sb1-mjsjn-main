@@ -112,6 +112,26 @@ interface Store {
   // Snippets management
   snippets: any[];
   setSnippets: (snippets: any[]) => void;
+
+  // API Keys
+  youtubeApiKey: string;
+  setYoutubeApiKey: (key: string) => void;
+  
+  chatApiKey: string;
+  setChatApiKey: (key: string) => void;
+  
+  azureOpenAIKey: string;
+  setAzureOpenAIKey: (key: string) => void;
+  
+  azureOpenAIEndpoint: string;
+  setAzureOpenAIEndpoint: (endpoint: string) => void;
+  
+  // Other state
+  selectedRole: AssistantRole;
+  setSelectedRole: (role: AssistantRole) => void;
+  
+  darkMode: boolean;
+  setDarkMode: (darkMode: boolean) => void;
 }
 
 const DEFAULT_PROJECT_ID = 'default-project';
@@ -432,6 +452,26 @@ export const useStore = create<Store>()(
       // Snippets management
       snippets: [],
       setSnippets: (snippets) => set({ snippets }),
+
+      // API Keys
+      youtubeApiKey: '',
+      setYoutubeApiKey: (key) => set({ youtubeApiKey: key }),
+      
+      chatApiKey: '',
+      setChatApiKey: (key) => set({ chatApiKey: key }),
+      
+      azureOpenAIKey: '',
+      setAzureOpenAIKey: (key) => set({ azureOpenAIKey: key }),
+      
+      azureOpenAIEndpoint: '',
+      setAzureOpenAIEndpoint: (endpoint) => set({ azureOpenAIEndpoint: endpoint }),
+      
+      // Other state
+      selectedRole: 'default',
+      setSelectedRole: (role) => set({ selectedRole: role }),
+      
+      darkMode: true,
+      setDarkMode: (darkMode) => set({ darkMode }),
     }),
     {
       name: 'pdf-assistant-storage',
@@ -443,6 +483,8 @@ export const useStore = create<Store>()(
         customTools: state.customTools,
         modifiedBuiltInTools: state.modifiedBuiltInTools,
         toolApiKeys: state.toolApiKeys,
+        selectedRole: state.selectedRole,
+        darkMode: state.darkMode,
       }),
     }
   )

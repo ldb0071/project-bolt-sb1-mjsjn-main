@@ -4,7 +4,7 @@ import { useStore } from '../store/useStore';
 import useResizeObserver from 'use-resize-observer';
 
 // Configure PDF.js worker with strict settings
-const workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+const workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 let pdfWorker: Worker | null = null;
 
 const initializeWorker = () => {
@@ -12,17 +12,24 @@ const initializeWorker = () => {
     pdfWorker.terminate();
   }
 
-  // Create worker with error handling
-  pdfWorker = new Worker(workerSrc);
-  pdfWorker.onerror = (error) => {
-    console.error('PDF Worker error:', error);
-  };
-  
-  // Configure worker
-  pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
-  pdfjs.GlobalWorkerOptions.workerPort = pdfWorker;
+  try {
+    // Create worker with error handling
+    pdfWorker = new Worker(workerSrc);
+    pdfWorker.onerror = (error) => {
+      console.error('PDF Worker error:', error);
+      // Attempt to reinitialize worker on error
+      setTimeout(initializeWorker, 1000);
+    };
+    
+    // Configure worker
+    pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
+    pdfjs.GlobalWorkerOptions.workerPort = pdfWorker;
 
-  return pdfWorker;
+    return pdfWorker;
+  } catch (error) {
+    console.error('Failed to initialize PDF worker:', error);
+    return null;
+  }
 };
 
 interface PDFViewerProps {
@@ -67,6 +74,11 @@ export function PDFViewer({ fileUrl, fileId }: PDFViewerProps) {
 
   const [workerError, setWorkerError] = useState<string | null>(null);
   const workerRef = useRef<Worker | null>(null);
+
+  const [isGridMode, setIsGridMode] = useState(false);
+  const [isFullScreen, setIsFullScreen] = useState(false);
+  const [preGridScale, setPreGridScale] = useState(1);
+  const [previousScale, setPreviousScale] = useState(1);
 
   // Initialize worker on mount
   useEffect(() => {
@@ -335,6 +347,38 @@ export function PDFViewer({ fileUrl, fileId }: PDFViewerProps) {
       handleTextContentError();
     }
   }, [textContentError]);
+
+  const toggleGridMode = useCallback(() => {
+    if (!isGridMode) {
+      setPreGridScale(scale);
+      setScale(isFullScreen ? 1.5 : 1);
+    } else {
+      setScale(isFullScreen ? 1.5 : preGridScale);
+    }
+    setIsGridMode(!isGridMode);
+  }, [isGridMode, scale, preGridScale, isFullScreen]);
+
+  const toggleFullScreen = useCallback(async () => {
+    try {
+      if (!isFullScreen) {
+        setPreviousScale(scale);
+        const element = document.documentElement;
+        if (element.requestFullscreen) {
+          await element.requestFullscreen();
+          setIsFullScreen(true);
+          setScale(isGridMode ? 1.5 : 1.5);
+        }
+      } else {
+        if (document.fullscreenElement) {
+          await document.exitFullscreen();
+        }
+        setIsFullScreen(false);
+        setScale(isGridMode ? 1 : previousScale);
+      }
+    } catch (error) {
+      console.error('Fullscreen error:', error);
+    }
+  }, [isFullScreen, scale, previousScale, isGridMode]);
 
   return (
     <div

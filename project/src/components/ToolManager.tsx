@@ -328,8 +328,8 @@ export function ToolManager() {
                     <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">Parameters:</h4>
                     <div className="grid grid-cols-3 gap-2 text-sm">
                       {currentTool.parameters.map((param, index) => (
-                        <div
-                          key={index}
+                        <motion.div
+                          key={`${param.name}-${index}`}
                           className="p-2 bg-gray-50 dark:bg-navy-900 rounded-lg"
                         >
                           <div className="font-medium text-gray-700 dark:text-gray-300">
@@ -339,7 +339,7 @@ export function ToolManager() {
                             Type: {param.type}
                             {param.required && ' (Required)'}
                           </div>
-                        </div>
+                        </motion.div>
                       ))}
                     </div>
                   </div>
@@ -467,7 +467,10 @@ export function ToolManager() {
               </label>
               <div className="space-y-2">
                 {formData.parameters.map((param, index) => (
-                  <div key={index} className="flex items-center gap-2">
+                  <motion.div
+                    key={`${param.name}-${index}`}
+                    className="flex items-center gap-2"
+                  >
                     <input
                       type="text"
                       value={param.name}
@@ -506,7 +509,7 @@ export function ToolManager() {
                     >
                       <X className="h-5 w-5" />
                     </button>
-                  </div>
+                  </motion.div>
                 ))}
                 <button
                   type="button"
@@ -563,19 +566,19 @@ export function ToolManager() {
                 Allowed Roles
               </label>
               <div className="flex flex-wrap gap-2">
-                {Object.entries(ROLE_CONFIGS).map(([role, config]) => (
-                  <button
-                    key={role}
+                {Object.entries(ROLE_CONFIGS).map(([roleId, config]) => (
+                  <motion.button
+                    key={roleId}
                     type="button"
-                    onClick={() => toggleRoleSelection(role as AssistantRole)}
+                    onClick={() => toggleRoleSelection(roleId as AssistantRole)}
                     className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
-                      selectedRoles.includes(role as AssistantRole)
+                      selectedRoles.includes(roleId as AssistantRole)
                         ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/50 dark:text-primary-400'
                         : 'bg-gray-100 text-gray-600 dark:bg-navy-700 dark:text-gray-400'
                     }`}
                   >
                     {config.title}
-                  </button>
+                  </motion.button>
                 ))}
               </div>
             </div>
@@ -595,7 +598,11 @@ export function ToolManager() {
         <div>
           <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Built-in Tools</h3>
           <div className="space-y-4">
-            {Object.values(BUILT_IN_TOOLS).map((tool) => renderToolCard(tool, true))}
+            {Object.entries(BUILT_IN_TOOLS).map(([id, tool]) => (
+              <motion.div key={id}>
+                {renderToolCard(tool, true)}
+              </motion.div>
+            ))}
           </div>
         </div>
 
@@ -603,7 +610,11 @@ export function ToolManager() {
           <div>
             <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Custom Tools</h3>
             <div className="space-y-4">
-              {customTools.map((tool) => renderToolCard(tool))}
+              {customTools.map((tool) => (
+                <motion.div key={tool.id}>
+                  {renderToolCard(tool)}
+                </motion.div>
+              ))}
             </div>
           </div>
         )}

@@ -318,24 +318,28 @@ class KnowledgeGraph:
             return []
 
 class RAGService:
-    def __init__(self, github_token: str = None, azure_endpoint: str = None):
+    def __init__(self, github_token: str = None, azure_endpoint: str = None, azure_api_key: str = None):
         try:
             self.github_token = github_token or os.getenv('GITHUB_TOKEN')
             self.azure_endpoint = azure_endpoint or os.getenv('AZURE_ENDPOINT', "https://models.inference.ai.azure.com")
+            self.azure_api_key = azure_api_key or os.getenv('AZURE_OPENAI_API_KEY')
             
             if not self.github_token:
                 raise ValueError("GitHub token not found in environment variables or constructor")
             
+            if not self.azure_api_key:
+                raise ValueError("Azure OpenAI API key not found in environment variables or constructor")
+            
             # Initialize Azure OpenAI clients with different API versions
             self.azure_client = AzureOpenAI(
-                api_key=self.github_token,
+                api_key=self.azure_api_key,
                 azure_endpoint=self.azure_endpoint,
                 api_version="2023-05-15"
             )
             
             # Initialize O1 client with newer API version
             self.o1_client = AzureOpenAI(
-                api_key=self.github_token,
+                api_key=self.azure_api_key,
                 azure_endpoint=self.azure_endpoint,
                 api_version="2024-12-01-preview"
             )
@@ -1100,8 +1104,8 @@ class RAGService:
         logger.info("All caches cleared")
 
 class GraphRAGService(RAGService):
-    def __init__(self, github_token: str = None, azure_endpoint: str = None):
-        super().__init__(github_token, azure_endpoint)
+    def __init__(self, github_token: str = None, azure_endpoint: str = None, azure_api_key: str = None):
+        super().__init__(github_token=github_token, azure_endpoint=azure_endpoint, azure_api_key=azure_api_key)
         self.knowledge_graph = KnowledgeGraph()
         
     async def process_markdown_files(self, project_name: str, markdown_dir: str = None) -> Dict[str, Any]:

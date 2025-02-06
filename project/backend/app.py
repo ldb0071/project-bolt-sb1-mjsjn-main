@@ -1,6 +1,12 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request, Body
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request, Body, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.middleware.gzip import GZipMiddleware
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from cachetools import TTLCache
+from functools import wraps
 from pydantic import BaseModel
 from typing import Optional, Dict, List, Any
 from chat_service import ChatService
@@ -26,13 +32,74 @@ import datetime
 from enhanced_document_processor import EnhancedDocumentProcessor
 import pdfplumber
 from pypdf import PdfWriter, PdfReader
+import logging.handlers
+import time
+from prometheus_client import Counter, Histogram, start_http_server
+import sentry_sdk
+from sentry_sdk.integrations.fastapi import FastApiIntegration
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 # Load environment variables
 load_dotenv()
 
 # Set up logging
-logging.basicConfig(level=logging.INFO)
+LOG_FILE = "app.log"
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.handlers.RotatingFileHandler(LOG_FILE, maxBytes=10485760, backupCount=5),
+        logging.StreamHandler()
+    ]
+)
 logger = logging.getLogger(__name__)
+
+# Initialize Sentry for error tracking
+sentry_sdk.init(
+    dsn=os.getenv("SENTRY_DSN"),
+    integrations=[FastApiIntegration()],
+    traces_sample_rate=1.0,
+    environment=os.getenv("ENVIRONMENT", "development")
+)
+
+# Prometheus metrics
+REQUEST_COUNT = Counter(
+    'app_request_count',
+    'Application Request Count',
+    ['method', 'endpoint', 'http_status']
+)
+REQUEST_LATENCY = Histogram(
+    'app_request_latency_seconds',
+    'Application Request Latency',
+    ['method', 'endpoint']
+)
+
+# Start Prometheus metrics server
+start_http_server(8000)
+
+# Initialize cache with 1 hour TTL
+CACHE = TTLCache(maxsize=100, ttl=3600)
+
+def cache_response(ttl: int = 3600):
+    """Simple cache decorator for API responses"""
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            # Create cache key from function name and arguments
+            cache_key = f"{func.__name__}:{str(args)}:{str(kwargs)}"
+            
+            # Try to get from cache
+            if cache_key in CACHE:
+                return CACHE[cache_key]
+            
+            # If not in cache, execute function
+            response = await func(*args, **kwargs)
+            
+            # Store in cache
+            CACHE[cache_key] = response
+            return response
+        return wrapper
+    return decorator
 
 # Define request models
 class AnalyzeRequest(BaseModel):
@@ -87,6 +154,14 @@ class ChannelResponse(BaseModel):
 class CodeExecutionRequest(BaseModel):
     code: str
 
+class APIKeyUpdate(BaseModel):
+    youtube_api_key: Optional[str] = None
+    chat_api_key: Optional[str] = None
+    gemini_api_key: Optional[str] = None
+    github_token: Optional[str] = None
+    azure_openai_api_key: Optional[str] = None
+    azure_openai_endpoint: Optional[str] = None
+
 # Initialize YouTube API client
 YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY')
 if not YOUTUBE_API_KEY:
@@ -95,7 +170,11 @@ if not YOUTUBE_API_KEY:
 else:
     youtube = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
 
+# Initialize rate limiter
+limiter = Limiter(key_func=get_remote_address)
 app = FastAPI()
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Add CORS middleware
 app.add_middleware(
@@ -105,6 +184,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Add Gzip compression middleware
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # Initialize chat service with API key
 chat_service = ChatService(api_key="AIzaSyBQfQ7sN-ASKnlFe8Zg50xsp6qmDdZoweU")
@@ -116,7 +198,21 @@ def get_rag_service():
     global rag_service
     if rag_service is None:
         from rag_service import GraphRAGService
-        rag_service = GraphRAGService(github_token="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")
+        azure_openai_key = os.getenv('AZURE_OPENAI_API_KEY')
+        azure_openai_endpoint = os.getenv('AZURE_OPENAI_ENDPOINT')
+        github_token = os.getenv('GITHUB_TOKEN')
+        
+        if not azure_openai_key or not azure_openai_endpoint:
+            raise HTTPException(
+                status_code=500,
+                detail="Azure OpenAI credentials not found. Please set AZURE_OPENAI_API_KEY and AZURE_OPENAI_ENDPOINT environment variables."
+            )
+        
+        rag_service = GraphRAGService(
+            github_token=github_token,
+            azure_endpoint=azure_openai_endpoint,
+            azure_api_key=azure_openai_key
+        )
     return rag_service
 
 # Create storage directories if they don't exist
@@ -142,56 +238,152 @@ def get_project_dirs(project_name: str) -> tuple[str, str, str]:
             
     return project_dir, uploaded_dir, downloaded_dir
 
-@app.get("/api/arxiv/search", response_model=ArxivSearchResponse)
-async def search_arxiv(
-    query: str, 
-    source: str = 'All',
-    max_results: int = 10,
-    include_citations: bool = False
-):
-    print(f"\n=== Received arxiv search request ===")
-    print(f"Query: {query}")
-    print(f"Source: {source}")
-    print(f"Max results: {max_results}")
-    print(f"Include citations: {include_citations}")
+@app.on_event("startup")
+async def startup():
+    try:
+        logger.info("Application startup complete")
+    except Exception as e:
+        logger.error(f"Error during startup: {e}")
+        sentry_sdk.capture_exception(e)
+
+@app.on_event("shutdown")
+async def shutdown():
+    try:
+        # Clear cache
+        CACHE.clear()
+        logger.info("Cache cleared successfully")
+    except Exception as e:
+        logger.error(f"Error during shutdown: {e}")
+        sentry_sdk.capture_exception(e)
+
+# Custom error handler
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    error_id = str(time.time())
+    logger.error(f"Error ID: {error_id}")
+    logger.error(f"Request: {request.url}")
+    logger.error(f"Error: {exc}")
+    logger.error(f"Traceback: {traceback.format_exc()}")
+    
+    # Capture exception in Sentry
+    sentry_sdk.capture_exception(exc)
+    
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={
+            "error": "Internal server error",
+            "error_id": error_id,
+            "message": str(exc) if os.getenv("DEBUG") == "true" else "An unexpected error occurred"
+        }
+    )
+
+# Custom middleware for logging and metrics
+@app.middleware("http")
+async def log_and_measure_requests(request: Request, call_next):
+    start_time = time.time()
+    method = request.method
+    path = request.url.path
     
     try:
-        # Search arxiv
+        response = await call_next(request)
+        status_code = response.status_code
+        
+        # Record metrics
+        REQUEST_COUNT.labels(method=method, endpoint=path, http_status=status_code).inc()
+        REQUEST_LATENCY.labels(method=method, endpoint=path).observe(time.time() - start_time)
+        
+        # Log request details
+        logger.info(
+            f"Request: {method} {path} - Status: {status_code} - "
+            f"Duration: {time.time() - start_time:.3f}s"
+        )
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Request failed: {method} {path} - Error: {str(e)}")
+        raise
+
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
+async def perform_arxiv_search(query: str, source: str, max_results: int, include_citations: bool) -> ArxivSearchResponse:
+    """Perform Arxiv search with retry logic"""
+    try:
+        # Construct search query
+        search_query = query
+        if source and source.lower() != 'all':
+            search_query = f"{query} AND cat:{source}"
+
+        # Perform search
         search = arxiv.Search(
-            query=query,
+            query=search_query,
             max_results=max_results,
             sort_by=arxiv.SortCriterion.Relevance
         )
 
         papers = []
-        total_results = 0
+        # Use list() to get all results at once instead of async iteration
+        results = list(search.results())
         
-        for result in search.results():
-            paper = ArxivPaper(
-                id=result.entry_id.split('/')[-1],
-                title=result.title,
-                authors=[author.name for author in result.authors],
-                summary=result.summary,
-                published=result.published.strftime("%Y-%m-%d"),
-                updated=result.updated.strftime("%Y-%m-%d"),
-                pdfUrl=result.pdf_url,
-                categories=result.categories
-            )
-            papers.append(paper)
-            total_results += 1
-            
-            if total_results >= max_results:
-                break
+        for result in results:
+            try:
+                paper = ArxivPaper(
+                    id=result.entry_id.split('/')[-1],
+                    title=result.title,
+                    authors=[author.name for author in result.authors],
+                    summary=result.summary,
+                    published=result.published.isoformat(),
+                    updated=result.updated.isoformat(),
+                    pdfUrl=result.pdf_url,
+                    categories=result.categories
+                )
+                papers.append(paper)
+            except Exception as e:
+                logger.error(f"Error processing paper {result.entry_id}: {str(e)}")
+                continue
 
-        print(f"Found {total_results} papers")
-        print("=== Search completed ===\n")
+        return ArxivSearchResponse(papers=papers, total_results=len(papers))
+
+    except Exception as e:
+        logger.error(f"Error in ArXiv search: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to search ArXiv: {str(e)}"
+        )
+
+@app.get("/api/arxiv/search", response_model=ArxivSearchResponse)
+@limiter.limit("20/minute")
+@cache_response(ttl=300)  # Cache for 5 minutes
+async def search_arxiv(
+    request: Request,
+    query: str,
+    source: str = 'All',
+    max_results: int = 10,
+    include_citations: bool = False
+):
+    try:
+        logger.info(f"Arxiv search request - Query: {query}, Source: {source}")
         
-        return ArxivSearchResponse(papers=papers, total_results=total_results)
+        if not query:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Query parameter is required"
+            )
+        
+        start_time = time.time()
+        result = await perform_arxiv_search(query, source, max_results, include_citations)
+        duration = time.time() - start_time
+        
+        logger.info(f"Arxiv search completed in {duration:.3f}s - Found {result.total_results} papers")
+        return result
         
     except Exception as e:
-        print(f"Error searching arxiv: {e}")
-        # Return empty results instead of throwing error
-        return ArxivSearchResponse(papers=[], total_results=0)
+        error_id = str(time.time())
+        logger.error(f"Error ID: {error_id} - Arxiv search failed: {str(e)}")
+        sentry_sdk.capture_exception(e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to search ArXiv: {str(e)}"
+        )
 
 @app.post("/api/pdf/upload", response_model=UploadResponse)
 async def upload_pdf(
@@ -1348,6 +1540,70 @@ async def serve_pdf(path: str, page: Optional[int] = None):
     except Exception as e:
         logger.error(f"Error serving PDF: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for monitoring"""
+    return {"status": "healthy", "timestamp": time.time()}
+
+@app.get("/metrics")
+async def metrics():
+    """Prometheus metrics endpoint"""
+    return Response(media_type="text/plain")
+
+@app.get("/api/settings/keys")
+async def get_api_keys():
+    """Get current API keys"""
+    return {
+        "youtube_api_key": os.getenv('YOUTUBE_API_KEY', ''),
+        "chat_api_key": os.getenv('CHAT_API_KEY', ''),
+        "gemini_api_key": os.getenv('GEMINI_API_KEY', ''),
+        "github_token": os.getenv('GITHUB_TOKEN', ''),
+        "azure_openai_api_key": os.getenv('AZURE_OPENAI_API_KEY', ''),
+        "azure_openai_endpoint": os.getenv('AZURE_OPENAI_ENDPOINT', '')
+    }
+
+@app.post("/api/settings/update-keys")
+async def update_api_keys(keys: APIKeyUpdate):
+    """Update API keys in .env file"""
+    try:
+        # Read current .env file
+        env_path = os.path.join(os.path.dirname(__file__), '.env')
+        current_env = {}
+        
+        if os.path.exists(env_path):
+            with open(env_path, 'r') as f:
+                for line in f:
+                    if '=' in line:
+                        key, value = line.strip().split('=', 1)
+                        current_env[key] = value
+
+        # Update with new values if provided
+        if keys.youtube_api_key is not None:
+            current_env['YOUTUBE_API_KEY'] = keys.youtube_api_key
+        if keys.chat_api_key is not None:
+            current_env['CHAT_API_KEY'] = keys.chat_api_key
+        if keys.gemini_api_key is not None:
+            current_env['GEMINI_API_KEY'] = keys.gemini_api_key
+        if keys.github_token is not None:
+            current_env['GITHUB_TOKEN'] = keys.github_token
+        if keys.azure_openai_api_key is not None:
+            current_env['AZURE_OPENAI_API_KEY'] = keys.azure_openai_api_key
+        if keys.azure_openai_endpoint is not None:
+            current_env['AZURE_OPENAI_ENDPOINT'] = keys.azure_openai_endpoint
+
+        # Write back to .env file
+        with open(env_path, 'w') as f:
+            for key, value in current_env.items():
+                f.write(f"{key}={value}\n")
+
+        # Reload environment variables
+        load_dotenv()
+        
+        return {"message": "API keys updated successfully"}
+    except Exception as e:
+        logger.error(f"Error updating API keys: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to update API keys: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

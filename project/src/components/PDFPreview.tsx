@@ -12,9 +12,9 @@ import { TextSelectionPopup } from './TextSelectionPopup';
 import { convertPDFToMarkdown } from '../services/apiClient';
 
 // Set worker source to CDN path for better reliability
-pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
-// Add loading options
+// Add loading options with better error handling
 const PDF_LOADING_OPTIONS = {
   cMapUrl: 'https://unpkg.com/pdfjs-dist@3.4.120/cmaps/',
   cMapPacked: true,
@@ -23,7 +23,11 @@ const PDF_LOADING_OPTIONS = {
   stopAtErrors: false,
   maxImageSize: 1024 * 1024 * 10,
   isEvalSupported: true,
-  useSystemFonts: true
+  useSystemFonts: true,
+  disableAutoFetch: false,
+  disableStream: false,
+  disableFontFace: false,
+  useWorkerFetch: true
 };
 
 const styles = {

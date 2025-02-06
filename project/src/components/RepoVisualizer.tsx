@@ -589,6 +589,48 @@ const ArchitectureModal: React.FC<ArchitectureModalProps> = ({
   const openaiKey = useStore((state) => state.openaiKey);
   const diagramRef = useRef<HTMLDivElement>(null);
 
+  // Add state for diagram container dragging
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Add mouse event handlers for dragging
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.button === 0) { // Left mouse button only
+      setIsDragging(true);
+      setDragStart({
+        x: e.clientX - diagramPosition.x,
+        y: e.clientY - diagramPosition.y
+      });
+      if (containerRef.current) {
+        containerRef.current.style.cursor = 'grabbing';
+      }
+    }
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (isDragging && containerRef.current) {
+      const newX = e.clientX - dragStart.x;
+      const newY = e.clientY - dragStart.y;
+      setDiagramPosition({ x: newX, y: newY });
+    }
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+    if (containerRef.current) {
+      containerRef.current.style.cursor = 'grab';
+    }
+  };
+
+  // Add mouse leave handler to prevent diagram from sticking when mouse leaves window
+  const handleMouseLeave = () => {
+    setIsDragging(false);
+    if (containerRef.current) {
+      containerRef.current.style.cursor = 'grab';
+    }
+  };
+
   // Handle fullscreen toggle
   const toggleFullscreen = () => {
     setIsFullscreen(!isFullscreen);
@@ -606,26 +648,6 @@ const ArchitectureModal: React.FC<ArchitectureModalProps> = ({
   const handleZoomReset = () => {
     setZoom(100);
     setDiagramPosition({ x: 0, y: 0 });
-  };
-
-  // Handle diagram dragging
-  const handleDragStart = (e: React.MouseEvent) => {
-    if (e.button === 0) { // Left mouse button only
-      setIsDiagramDragging(true);
-    }
-  };
-
-  const handleDragMove = (e: React.MouseEvent) => {
-    if (isDiagramDragging) {
-      setDiagramPosition(prev => ({
-        x: prev.x + e.movementX,
-        y: prev.y + e.movementY
-      }));
-    }
-  };
-
-  const handleDragEnd = () => {
-    setIsDiagramDragging(false);
   };
 
   // Add keyboard shortcuts
@@ -1363,19 +1385,23 @@ Return ONLY the Mermaid diagram code block, nothing else.`;
             {/* Diagram Container */}
             <div className="relative">
               <div 
-                ref={diagramRef}
-                className={`w-full ${isFullscreen ? 'h-[calc(100vh-300px)]' : 'h-[500px]'} bg-navy-800 rounded-lg overflow-hidden border border-navy-700 cursor-grab ${isDiagramDragging ? 'cursor-grabbing' : ''}`}
-                onMouseDown={handleDragStart}
-                onMouseMove={handleDragMove}
-                onMouseUp={handleDragEnd}
-                onMouseLeave={handleDragEnd}
+                ref={containerRef}
+                className={`w-full ${isFullscreen ? 'h-[calc(100vh-300px)]' : 'h-[500px]'} 
+                  bg-navy-800 rounded-lg overflow-hidden border border-navy-700 
+                  cursor-grab ${isDragging ? 'cursor-grabbing' : ''}`}
+                onMouseDown={handleMouseDown}
+                onMouseMove={handleMouseMove}
+                onMouseUp={handleMouseUp}
+                onMouseLeave={handleMouseLeave}
               >
                 <div 
+                  ref={diagramRef}
                   style={{
                     transform: `translate(${diagramPosition.x}px, ${diagramPosition.y}px) scale(${zoom / 100})`,
                     transformOrigin: 'center',
-                    transition: isDiagramDragging ? 'none' : 'transform 0.2s'
+                    transition: isDragging ? 'none' : 'transform 0.2s'
                   }}
+                  className="w-full h-full"
                 >
                   {!diagramContent && (
                     <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-3">

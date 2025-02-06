@@ -18,7 +18,14 @@ import {
 } from 'lucide-react';
 
 // Initialize PDF.js worker
-pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+const workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+
+try {
+  pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
+} catch (error) {
+  console.error('Error initializing PDF.js worker:', error);
+  toast.error('Error initializing PDF viewer. Please refresh the page.');
+}
 
 // Constants
 const MAX_SCALE = 5;

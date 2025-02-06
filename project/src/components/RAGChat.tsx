@@ -18,16 +18,25 @@ import type { CodeComponent } from 'react-markdown/lib/ast-to-react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
 import 'react-pdf/dist/esm/Page/TextLayer.css';
+import { initMathJax } from '../utils/mathJaxConfig';
 
-// Declare the window interface to include KaTeX's renderMathInElement
+// Declare the window interface to include KaTeX's renderMathInElement and MathJax
 declare global {
   interface Window {
     renderMathInElement: (element: HTMLElement, options: any) => void;
+    MathJax: any;
   }
 }
 
 // Set up PDF.js worker
-pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+const workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+
+try {
+  pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
+} catch (error) {
+  console.error('Error initializing PDF.js worker:', error);
+  // Error will be handled by the component's error boundary
+}
 
 // PDF loading options
 const PDF_LOADING_OPTIONS = {
@@ -41,36 +50,58 @@ const PDF_LOADING_OPTIONS = {
   disableFontFace: false,
   useWorkerFetch: true,
   disableAutoFetch: false,
-  disableStream: false
+  disableStream: false,
+  disableExtensionCheck: true // Add this to prevent extension conflicts
 };
 
-// Utility function to preprocess equations
+// Update the preprocessEquations function
 const preprocessEquations = (content: string): string => {
-  // Handle block equations - add line breaks and equation numbers
+  // Handle block equations
   content = content.replace(/\$\$(.*?)\$\$/gs, (match, equation) => {
     try {
       const cleanEquation = equation.trim()
-        .replace(/\\text{([^}]+)}/g, '\\text{$1}')
-        .replace(/_([a-zA-Z0-9]+)/g, '_{\\text{$1}}')
-        .replace(/([a-zA-Z]+)_([a-zA-Z]+)/g, '\\text{$1}_{\\text{$2}}');
-      // Wrap in align environment for better PDF-like display
-      return `\n\\begin{align*}\n${cleanEquation}\n\\end{align*}\n`;
+        // Handle fractions
+        .replace(/\\frac{([^}]+)}{([^}]+)}/g, (_: string, num: string, den: string) => {
+          return `\\frac{${num.trim()}}{${den.trim()}}`;
+        })
+        // Handle square roots with proper spacing
+        .replace(/\\sqrt{([^}]+)}/g, (_: string, content: string) => {
+          return `\\sqrt{${content.trim()}}`;
+        })
+        // Handle exponentials with proper spacing
+        .replace(/\\exp\\left/g, '\\exp\\!\\left')
+        // Handle parentheses spacing
+        .replace(/\\left\(/g, '\\left( ')
+        .replace(/\\right\)/g, ' \\right)')
+        // Handle proper spacing around operators
+        .replace(/([=+\-*/])/g, ' $1 ')
+        // Handle Greek letters
+        .replace(/\\(sigma|mu|pi|alpha|beta|gamma|delta|epsilon|theta|lambda)/g, '\\$1');
+
+      return `$$${cleanEquation}$$`;
     } catch (error) {
       console.error('Error processing block equation:', error);
       return match;
     }
   });
 
-  // Handle inline equations with improved spacing
+  // Handle inline equations
   content = content.replace(/\$(.*?)\$/g, (match, equation) => {
     if (match.startsWith('$$')) return match;
     try {
       const cleanEquation = equation.trim()
+        // Handle text in equations
         .replace(/\\text{([^}]+)}/g, '\\text{$1}')
-        .replace(/_([a-zA-Z0-9]+)/g, '_{\\text{$1}}')
-        .replace(/([a-zA-Z]+)_([a-zA-Z]+)/g, '\\text{$1}_{\\text{$2}}');
-      // Add small spacing around inline equations
-      return `\\;$${cleanEquation}$\\;`;
+        // Handle subscripts with text
+        .replace(/_([a-zA-Z0-9]+)/g, '_{$1}')
+        // Handle variable names with subscripts
+        .replace(/([a-zA-Z]+)_([a-zA-Z]+)/g, '$1_{$2}')
+        // Handle special functions
+        .replace(/\\(sin|cos|tan|log|ln|exp|lim|sup|inf|max|min)/g, '\\$1')
+        // Add spacing around operators
+        .replace(/([=+\-*/])/g, ' $1 ');
+
+      return `$${cleanEquation}$`;
     } catch (error) {
       console.error('Error processing inline equation:', error);
       return match;
@@ -85,25 +116,17 @@ interface EquationRendererProps {
   isBlock?: boolean;
 }
 
-// Custom component for rendering equations
+// Update the EquationRenderer component
 const EquationRenderer: React.FC<EquationRendererProps> = ({ children, isBlock = false }) => {
   const equationRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (equationRef.current && window.renderMathInElement) {
+    if (equationRef.current && window.MathJax?.typesetPromise) {
       try {
-        window.renderMathInElement(equationRef.current, {
-          delimiters: [{
-            left: "$$",
-            right: "$$",
-            display: true
-          }, {
-            left: "$",
-            right: "$",
-            display: false
-          }],
-          throwOnError: false
-        });
+        window.MathJax.typesetPromise([equationRef.current])
+          .catch((err: any) => {
+            console.error('MathJax typesetting error:', err);
+          });
       } catch (error) {
         console.error('Error rendering equation:', error);
       }
@@ -113,7 +136,23 @@ const EquationRenderer: React.FC<EquationRendererProps> = ({ children, isBlock =
   return (
     <div 
       ref={equationRef}
-      className={isBlock ? 'my-4 text-center' : 'inline'}
+      className={`${isBlock ? 'my-6 text-center w-full max-w-[90vw] overflow-x-auto' : 'inline'} 
+        font-serif tracking-normal antialiased
+        [&_.MathJax]:text-gray-100
+        [&_.MathJax]:text-[1.2em]
+        [&_.MathJax]:leading-relaxed
+        [&_.MathJax-Display]:my-8
+        [&_.MathJax-Display]:bg-[#1e1e1e]
+        [&_.MathJax-Display]:p-6
+        [&_.MathJax-Display]:rounded-lg
+        [&_.MathJax-Display]:shadow-lg
+        [&_.MathJax-Display]:border
+        [&_.MathJax-Display]:border-[#2a2a2a]
+        [&_.MathJax-Display]:flex
+        [&_.MathJax-Display]:justify-center
+        [&_.MathJax-Display]:items-center
+        [&_.MathJax-Display]:min-h-[100px]
+        ${isBlock ? '[&_.MathJax-Display]:shadow-lg [&_.MathJax-Display]:p-6 [&_.MathJax-Display]:rounded-lg' : ''}`}
     >
       {children}
     </div>
@@ -414,38 +453,11 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, isLatestMessag
   const contentRef = useRef<HTMLDivElement>(null);
   
   useEffect(() => {
-    if (contentRef.current && isLatestMessage) {
-      if (window.renderMathInElement) {
-        window.renderMathInElement(contentRef.current, {
-          delimiters: [
-            { left: '\\begin{align*}', right: '\\end{align*}', display: true },
-            { left: '$', right: '$', display: false }
-          ],
-          throwOnError: false,
-          errorColor: '#cc0000',
-          strict: false,
-          trust: true,
-          output: 'html',
-          macros: {
-            '\\text': '\\mathrm',
-            '\\pm': '\\pm',
-            '\\sqrt': '\\sqrt',
-            '\\align': '\\align',
-            '\\align*': '\\align*',
-            '\\begin': '\\begin',
-            '\\end': '\\end'
-          },
-          displayAlign: 'center',
-          displayMode: true,
-          minRuleThickness: 0.08,
-          maxSize: 12,
-          maxExpand: 1000,
-          fleqn: false,
-          leqno: true,
-          colorIsTextColor: true,
-          strict: true
+    if (contentRef.current && isLatestMessage && window.MathJax?.typesetPromise) {
+      window.MathJax.typesetPromise([contentRef.current])
+        .catch((err: any) => {
+          console.error('MathJax typesetting error:', err);
         });
-      }
     }
   }, [content, isLatestMessage]);
 
@@ -529,8 +541,8 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, isLatestMessag
 
   const components: Components = {
     table: ({ children }) => (
-      <div className="my-4 overflow-x-auto rounded-lg border border-navy-700">
-        <table className="min-w-full divide-y divide-navy-700">
+      <div className="w-full max-w-full overflow-x-auto my-4">
+        <table className="w-full border-collapse border-spacing-0">
           {children}
         </table>
       </div>
@@ -566,26 +578,29 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, isLatestMessag
       </p>
     ),
     pre: ({ children }) => (
-      <pre className="my-4 rounded-lg bg-navy-800 p-4 overflow-x-auto">
-        {children}
-      </pre>
+      <div className="relative group w-full max-w-full overflow-hidden">
+        <pre className="overflow-x-auto w-full max-w-full p-4 bg-navy-800/90 rounded-lg border border-navy-700">
+          {children}
+        </pre>
+      </div>
     ),
     code({ className, children }) {
       const match = /language-(\w+)/.exec(className || '');
       const language = match ? match[1] : '';
       
       return (
-        <div className="relative group">
+        <div className="relative group w-full max-w-full">
           {language ? (
             <Prism
               style={oneDark}
               language={language}
               PreTag="div"
+              className="w-full max-w-full overflow-x-auto text-sm font-mono leading-relaxed"
             >
               {String(children).replace(/\n$/, '')}
             </Prism>
           ) : (
-            <code className={className}>{children}</code>
+            <code className={`${className} text-sm font-mono leading-relaxed`}>{children}</code>
           )}
         </div>
       );
@@ -664,20 +679,34 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, isLatestMessag
     <>
       <div 
         ref={contentRef} 
-        className="prose prose-invert max-w-none break-words px-4 py-2 
-          [&_.katex-display]:my-6 
-          [&_.katex-display]:bg-navy-800/50 
-          [&_.katex-display]:p-4 
-          [&_.katex-display]:rounded-lg 
-          [&_.katex-display]:shadow-lg 
-          [&_.katex-display]:border 
-          [&_.katex-display]:border-navy-700
-          [&_.katex]:text-lg
-          [&_.katex-html]:leading-relaxed
-          [&_.katex-display_.katex-html]:overflow-x-auto 
-          [&_.katex-display_.katex-html]:overflow-y-hidden
-          [&_.katex-display_.katex]:min-w-0
-          [&_:is(.katex-display, .katex-display *)]:text-gray-200"
+        className="prose prose-invert max-w-none w-full break-words px-4 py-2
+          [&_pre]:max-w-full
+          [&_pre]:w-full
+          [&_pre]:overflow-x-auto
+          [&_pre]:p-4
+          [&_pre]:bg-[#1e1e1e]
+          [&_pre]:border
+          [&_pre]:border-[#2a2a2a]
+          [&_pre]:rounded-lg
+          [&_code]:text-sm
+          [&_code]:font-mono
+          [&_code]:leading-relaxed
+          [&_.MathJax-Display]:my-8
+          [&_.MathJax-Display]:bg-[#1e1e1e]
+          [&_.MathJax-Display]:p-6
+          [&_.MathJax-Display]:rounded-lg
+          [&_.MathJax-Display]:shadow-lg
+          [&_.MathJax-Display]:border
+          [&_.MathJax-Display]:border-[#2a2a2a]
+          [&_.MathJax-Display]:max-w-[90vw]
+          [&_.MathJax-Display]:overflow-x-auto
+          [&_.MathJax]:text-[1.2em]
+          [&_.MathJax]:text-gray-100
+          [&_.MathJax]:leading-relaxed
+          [&_.MathJax-Display]:flex
+          [&_.MathJax-Display]:justify-center
+          [&_.MathJax-Display]:items-center
+          [&_.MathJax-Display]:min-h-[100px]"
       >
         {Array.isArray(processedContent) ? (
           processedContent.map((part, index) => 
@@ -1004,6 +1033,10 @@ export function RAGChat({ projectName, onClose, initialMessages = [], onMessages
       source,
       page
     });
+  }, []);
+
+  useEffect(() => {
+    initMathJax();
   }, []);
 
   return (

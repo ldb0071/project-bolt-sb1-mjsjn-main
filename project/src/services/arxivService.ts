@@ -57,7 +57,7 @@ export const searchArxiv = async (params: ArxivSearchParams): Promise<ArxivSearc
       includeCitations 
     });
     
-    const { data } = await apiClient.get<ArxivSearchResponse>('arxiv/search', {
+    const response = await apiClient.get<ArxivSearchResponse>('arxiv/search', {
       params: {
         query: searchQuery,
         source,
@@ -66,16 +66,23 @@ export const searchArxiv = async (params: ArxivSearchParams): Promise<ArxivSearc
       }
     });
 
+    if (!response.data) {
+      throw new Error('No data received from ArXiv API');
+    }
+
     // Ensure we always return an array of papers
-    const papers = data.papers || [];
-    const total_results = data.total_results || papers.length;
+    const papers = response.data.papers || [];
+    const total_results = response.data.total_results || papers.length;
 
     console.log('ArXiv search completed:', { papers, total_results });
     return { papers, total_results };
   } catch (error) {
     console.error('Error searching arXiv:', error);
-    // Return empty results on error
-    return { papers: [], total_results: 0 };
+    if (axios.isAxiosError(error)) {
+      const errorMessage = error.response?.data?.detail || error.message;
+      throw new Error(`ArXiv search failed: ${errorMessage}`);
+    }
+    throw error;
   }
 };
 

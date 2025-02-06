@@ -391,7 +391,7 @@ const formatResponse = (content: string): string => {
 };
 
 // Update model types to include new models
-export type ModelId = 'gemini-2.0-flash-exp' | 'gemini-1.5-flash' | 'gemini-1.5-pro' | 'gemini-1.0-pro' | 'gpt-4o' | 'o1' | 'gpt-4o-mini' | 'Cohere-command-r' | 'Llama-3.2-90B-Vision-Instruct';
+export type ModelId = 'gemini-2.0-flash-exp' | 'gemini-1.5-flash' | 'gemini-1.5-pro' | 'gemini-1.0-pro' | 'gpt-4o' | 'o1' | 'gpt-4o-mini' | 'Cohere-command-r' | 'Llama-3.2-90B-Vision-Instruct' | 'o3-mini' | 'DeepSeek-R1';
 
 export const AVAILABLE_MODELS: Record<ModelId, { name: string; type: 'gemini' | 'gpt4'; supportsImages?: boolean }> = {
   'gemini-2.0-flash-exp': { name: 'Gemini 2.0 Flash (Experimental)', type: 'gemini', supportsImages: true },
@@ -402,7 +402,9 @@ export const AVAILABLE_MODELS: Record<ModelId, { name: string; type: 'gemini' | 
   'o1': { name: 'O1 Model', type: 'gpt4' },
   'gpt-4o-mini': { name: 'GPT-4 Online Mini', type: 'gpt4' },
   'Cohere-command-r': { name: 'Cohere Command', type: 'gpt4' },
-  'Llama-3.2-90B-Vision-Instruct': { name: 'Llama Vision', type: 'gpt4', supportsImages: true }
+  'Llama-3.2-90B-Vision-Instruct': { name: 'Llama Vision', type: 'gpt4', supportsImages: true },
+  'o3-mini': { name: 'O3 Mini', type: 'gpt4' },
+  'DeepSeek-R1': { name: 'DeepSeek R1', type: 'gpt4' }
 };
 
 const extractGeminiResponse = (data: any): string => {
@@ -443,7 +445,7 @@ export interface ModifiedBuiltInRole {
 
 const callGPT4API = async (
   messages: { role: 'user' | 'assistant' | 'system'; content: string; image?: string; messageId?: string }[],
-  apiKey: string = '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',
+  apiKey: string,
   model: string = 'gpt-4o'
 ): Promise<any> => {
   try {
@@ -476,6 +478,22 @@ const callGPT4API = async (
       requestBody = {
         ...requestBody,
         max_completion_tokens: 1000
+      };
+    } else if (model === 'o3-mini') {
+      requestBody = {
+        ...requestBody,
+        temperature: 0.7,
+        top_p: 0.95,
+        max_tokens: 2000,
+        stream: false
+      };
+    } else if (model === 'DeepSeek-R1') {
+      requestBody = {
+        ...requestBody,
+        temperature: 0.7,
+        top_p: 0.95,
+        max_tokens: 1000,
+        stream: false
       };
     } else if (model === 'Cohere-command-r') {
       requestBody = {
@@ -525,12 +543,9 @@ const callGPT4API = async (
 
     const data = await response.json();
     console.log('GPT-4 API Response:', data);
-
-    return {
-      content: formatResponse(data.choices[0].message.content || '')
-    };
+    return data;
   } catch (error) {
-    console.error('GPT-4 API Error:', error);
+    console.error('Error in GPT-4 API call:', error);
     throw error;
   }
 };
@@ -542,10 +557,10 @@ interface ChatMessageWithImage {
   image?: string;
 }
 
-// Update sendChatMessage to handle GPT-4
+// Update sendChatMessage to use the correct API keys
 export const sendChatMessage = async (
   messages: ChatMessage[],
-  apiKey: string = "AIzaSyBQfQ7sN-ASKnlFe8Zg50xsp6qmDdZoweU",
+  apiKey: string,
   role: AssistantRole = "default",
   model: ModelId = "gemini-1.5-flash",
   githubToken?: string
@@ -553,6 +568,12 @@ export const sendChatMessage = async (
   try {
     console.log('Starting sendChatMessage...');
     console.log('Model:', model);
+    
+    // Get the store state for API keys
+    const store = useStore.getState();
+    const azureOpenAIKey = store.azureOpenAIKey;
+    const geminiKey = store.geminiKey;
+    const githubTokenFromStore = store.githubToken;
     
     // Validate model
     const modelConfig = AVAILABLE_MODELS[model];
@@ -604,84 +625,38 @@ export const sendChatMessage = async (
 
     // Format the response based on the model type
     if (modelConfig.type === 'gpt4') {
-      console.log('Using GPT-4 model with API key');
+      console.log('Using GPT-4 model with Azure OpenAI key');
+      if (!azureOpenAIKey) {
+        throw new Error("Azure OpenAI API key is required for GPT-4 models");
+      }
       
       // Take only the last 5 messages to stay within token limits
       const recentMessages = messages.slice(-5);
       const formattedMessages = [
         {
           role: 'system' as const,
-          content: roleConfig.systemPrompt.substring(0, 500) // Truncate system prompt
+          content: roleConfig.systemPrompt.substring(0, 500)
         },
-        ...recentMessages.map(msg => {
-          // Handle image messages
-          if (msg.image) {
-            // Reduce image quality
-            let reducedImage = msg.image;
-            if (reducedImage.startsWith('data:image')) {
-              try {
-                // Create temporary image element
-                const img = new Image();
-                img.src = reducedImage;
-                
-                // Create canvas for image compression
-                const canvas = document.createElement('canvas');
-                const ctx = canvas.getContext('2d');
-                
-                // Set reduced dimensions (max 800px)
-                const maxDim = 800;
-                let width = img.width;
-                let height = img.height;
-                
-                if (width > maxDim || height > maxDim) {
-                  if (width > height) {
-                    height = (height / width) * maxDim;
-                    width = maxDim;
-                  } else {
-                    width = (width / height) * maxDim;
-                    height = maxDim;
-                  }
-                }
-                
-                canvas.width = width;
-                canvas.height = height;
-                
-                // Draw and compress image
-                ctx?.drawImage(img, 0, 0, width, height);
-                reducedImage = canvas.toDataURL('image/jpeg', 0.5); // Reduce quality to 50%
-              } catch (error) {
-                console.warn('Failed to reduce image quality:', error);
-              }
-            }
-            
-            return {
-              role: msg.role === 'system' ? 'user' as const : msg.role as 'user' | 'assistant',
-              content: msg.content?.substring(0, 1000) || '', // Truncate long messages
-              image: reducedImage
-            };
-          }
-          
-          // Handle text-only messages
-          return {
-            role: msg.role === 'system' ? 'user' as const : msg.role as 'user' | 'assistant',
-            content: msg.content?.substring(0, 1000) || '' // Truncate long messages
-          };
-        })
+        ...recentMessages.map(msg => ({
+          role: msg.role === 'system' ? 'user' as const : msg.role as 'user' | 'assistant',
+          content: msg.content?.substring(0, 1000) || '',
+          image: msg.image
+        }))
       ].map((msg, index) => ({
         ...msg,
-        messageId: `msg-${index}` // Add unique IDs for React keys
+        messageId: `msg-${index}`
       }));
 
       console.log('Formatted messages for GPT-4:', formattedMessages);
-      const response = await callGPT4API(formattedMessages, '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', model);
+      const response = await callGPT4API(formattedMessages, azureOpenAIKey, model);
       return {
-        content: response.content,
+        content: response.choices[0].message.content || '',
         arxivPapers
       };
     } else if (modelConfig.type === 'gemini') {
-      console.log('Using Gemini model with API key');
-      if (!apiKey) {
-        throw new Error("API key is required for Gemini models");
+      console.log('Using Gemini model with Gemini API key');
+      if (!geminiKey) {
+        throw new Error("Gemini API key is required for Gemini models");
       }
 
       const contextMessages = messages.slice(-10);
@@ -736,7 +711,7 @@ Please format your response using markdown:
         };
       });
 
-      const response = await callGeminiAPI(formattedMessages, apiKey, model);
+      const response = await callGeminiAPI(formattedMessages, geminiKey, model);
       const content = extractGeminiResponse(response);
 
       return {
